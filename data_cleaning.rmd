@@ -209,26 +209,52 @@ nrow(result)
 
 ```{r}
 
-duplicates_by_id <- df[duplicated(df$id), 1]
-duplicates_by_id  
-
-duplicates_by_host_id_and_name <- df[duplicated(df$latitude, df$longitude), ]
-duplicates_by_host_id_and_name
-?duplicated
-
-df[!(duplicated(df[c("longitude","latitude")]) | duplicated(df[c("longitude","latitude")], fromLast = TRUE)), ] %>%
-  select(latitude, longitude)
-
-df %>%
-  distinct(longitude, latitude, .keep_all = TRUE)
-
-df %>%
-  distinct(round(longitude, 8), round(latitude, 8), .keep_all = TRUE) %>%
-  select(longitude, latitude)
-
-str(df)
-
-df %>%
-  filter(latitude == 40.75362	)#, longitude == -73.97237	)
+get_duplicates_by_columns <- function(df, column_names) {
+  column_indexes <- unlist(lapply(column_names, function(name) {
+    return (grep(name, colnames(df)))
+  })) 
+  
+  return (df[duplicated(df[,column_indexes]) | duplicated(df[,column_indexes], fromLast = TRUE),])
+}
 
 ```
+
+## Duplicate ids
+
+```{r}
+
+nrow(get_duplicates_by_columns(df, c("id")))
+
+```
+## Duplicate names
+
+```{r}
+
+get_duplicates_by_columns(df, c("name")) %>%
+  select(id, name, host_name, neighbourhood, price) %>%
+  arrange(desc(name))
+
+```
+There are a lot of duplicate names in the dataset. Most of the time these listings seem to be from the same host. However, the listings seem to always differ in the neighbourhood or in the price. This will be further analysed in the following.
+
+```{r}
+
+get_duplicates_by_columns(df, c("name", "latitude", "longitude")) %>%
+  select(id, name, host_name, price, latitude, longitude) %>%
+  arrange(desc(name))
+
+```
+
+As one can see there are no listings with the same name that are also at the same geographic position. Since the combination of name, latitude and longitude is already a super key differentiating every row, no furher supersets of this combination need to be analysed.
+
+## Duplicate positions
+
+```{r}
+
+get_duplicates_by_columns(df, c("longitude", "latitude")) %>%
+  select(id, name, host_name, longitude, latitude) %>%
+  arrange(desc(latitude))
+
+```
+There are some listings that are at the exact same position. However, they more often than not have a different host or name and in every case a different price. Thus, we will not drop these entries and consider them in our analysis.
+

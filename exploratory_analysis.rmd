@@ -1,0 +1,21 @@
+# AirBnb
+
+Load required packages.
+
+```{r load packages, warning=FALSE, message=FALSE}
+
+library( tidyverse )
+library( dplyr )
+library( gridExtra )
+
+```
+
+Set up workspace, i.e., remove all existing data from working memory and load data from CSV file.
+
+```{r setup}
+
+rm( list=ls() )
+df <- read.csv("./data/airbnb_clean.csv")
+
+```
+

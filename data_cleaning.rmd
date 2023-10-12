@@ -315,3 +315,11 @@ get_duplicates_by_columns(df, c("longitude", "latitude")) %>%
 ```
 There are some listings that are at the exact same position. However, they more often than not have a different host or name and in every case a different price. Thus, we will not drop these entries and consider them in our analysis.
 
+# Export
+
+```{r}
+
+write.csv(df, "./data/airbnb_clean.csv")
+
+```
+

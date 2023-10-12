@@ -5,6 +5,8 @@ output: github_document
 
 # Data Cleaning
 
+Load required packages.
+
 ```{r load packages, warning=FALSE, message=FALSE}
 
 library( tidyverse )
@@ -12,6 +14,8 @@ library( dplyr )
 library( gridExtra )
 
 ```
+
+Set up workspace, i.e., remove all existing data from working memory and load data from CSV file.
 
 ```{r setup}
 
@@ -21,6 +25,8 @@ df <- read.csv("./data/airbnb_data.csv")
 ```
 
 # Transform data
+
+Convert the room_type, neighborhood_group, and neighborhood variables into factors and the last_review variable into a Date object.
 
 ```{r}
 
@@ -39,6 +45,8 @@ str(df)
 
 
 # Missing values
+
+Count the number of missing values and calculate the percentage.
  
 ```{r}
 
@@ -64,6 +72,12 @@ get_na_summary <- function(df) {
 get_na_summary(df)
 
 ```
+
+Defining a function to filter out rows where variables contain missing values.
+Missing values in reviews_per_month are replaced with 0, assuming no review means zero reviews per month. 
+Keep only rows without empty values in the name and host_name variables.
+Check the dataframe again for missing values after the cleaning.
+
 ```{r}
 
 `%nin%` = Negate(`%in%`)
@@ -79,6 +93,8 @@ get_na_summary(df)
 
 # Feature Engineering
 
+Create a variable that adds the most recent review date available in the dataset and store it in latest_review.
+
 ```{r}
 
 latest_review <- df %>%
@@ -86,13 +102,24 @@ latest_review <- df %>%
   summarise(max(last_review))
 latest_review <- latest_review[1,]
 
-# "center" of new york: columbus circle
+```
+
+Create a variable that contains the distance to the "center" of New York in Manhattan, here defined as the Columbus Circle.
+
+```{r}
 center_latitude <- 40.767811385445356
 center_longitude <- -73.98156481716236
 
 manhatten_distance <- function(x1, y1, x2, y2) {
   return(abs(x1 - x2) + abs(y1 - y2))  
 }
+
+```
+
+Create a variable that indicates the time passed since the last review. Another variable reflects the distance from the Columbus Circle in Manhattan.
+Add both to the dataframe.
+
+```{r}
 
 df <- df %>%
   mutate(
@@ -103,6 +130,9 @@ df <- df %>%
 head(df)
 
 ```
+
+Generate kernel density estimates for each variable in the dataframe to assess their distributions.
+
 ```{r}
 
 plot_distributions <- function(df) {
@@ -121,6 +151,7 @@ plot_distributions(df_sample)
 
 ```
 
+Log transforme skewed distributions.
 
 ```{r}
 
@@ -141,6 +172,8 @@ plot_distributions(df_sample)
 
 ```
 
+Save the modified data to the dataframe.
+
 ```{r}
 
 df <- df_log
@@ -148,9 +181,24 @@ df <- df_log
 ```
 
 
+Bin price and check the distribution across bins.
+
+```{r}
+bins <- c(0, 50, 100, 200, 500, 1000, 10000)
+labels <- c("0-50", "51-100", "101-200", "201-500", "501-1000", "1001+")
+df$price_bin <- cut(df$price, breaks = bins, labels = labels, include.lowest = TRUE, right = FALSE)
+table(df$price_bin)
+barplot(table(df$price_bin), main="Distribution of Price Bins", xlab="Price Bins", ylab="Frequency")
+```
+The listings are distributed across the bins, though there is less data for the two highest price categories.
+Most listings are in bins 2 and 3, i.e., between $51 and $500. The adjacent bins 1 and 4 are also well-represented.
+
 # Consistency
 
 ## Min/max
+
+Summarize the data.
+
 ```{r}
 
 df_numeric <- df %>%
@@ -163,9 +211,11 @@ summary(df_numeric)
 
 ```
 
-All numeric variables (except longitude) all have non-negative values. Max for availability_365 is 365
+All numeric variables (except longitude) have non-negative values. Max for availability_365 is 365.
 
 ## Unique ids
+
+Compare the number of rows and the number of unique ids to determine whether each row has a unique identifier.
 
 ```{r}
 
@@ -175,7 +225,11 @@ unique_ids <- length(unique(df$id))
 length_df == unique_ids
 
 ```
+There are no id inconsistencies.
+
 ## Reviews
+
+Filter the dataframe to find entries where reviews_per_month is 0 but number_of_reviews is not 0, find entries with 0 number_of_reviews but a non-NA last_review date and identify rows where reviews_per_month is 0 but last_review is not NA.
 
 ```{r}
 
@@ -204,8 +258,11 @@ result <- df %>%
 nrow(result)
 
 ```
+All review variables are internally consistent.
 
 # Duplicates
+
+Find duplicates based on the id column and identify listings that are at the exact same location.
 
 ```{r}
 

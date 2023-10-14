@@ -3,8 +3,6 @@ title: "Data Cleaning"
 output: github_document
 ---
 
-# Data Cleaning
-
 Load required packages.
 
 ```{r load packages, warning=FALSE, message=FALSE}

@@ -19,3 +19,258 @@ df <- read.csv("./data/airbnb_clean.csv")
 
 ```
 
+
+# Some general stuff
+
+```{r}
+
+room_type_counts <- df %>%
+  arrange(desc(room_type)) %>%
+  count(room_type)
+
+room_type_counts
+
+ggplot(room_type_counts, aes(x = "", y = n, fill = room_type)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start = 0) +
+  theme_void() #+
+  #theme(legend.position="none") +
+  #geom_text(aes(y = ypos, label = room_type), color = "white", size=6) +
+  #scale_fill_brewer(palette="Set1")
+```
+
+
+```{r}
+
+ggplot(df, aes(x = last_review_age, y = price)) +
+  geom_point()
+
+```
+
+```{r}
+
+ggplot(df, aes(x = availability_365, y = price)) +
+  geom_point()
+
+```
+
+```{r}
+
+ggplot(df, mapping = aes(y = log_price, x = room_type)) +
+  geom_boxplot()
+
+```
+
+```{r}
+
+df %>%
+  ggplot(mapping = aes(x = room_type, y = log_price)) +
+  geom_violin()
+
+```
+
+```{r}
+
+df %>%
+  filter(!is.na(last_review_age)) %>%
+  mutate(log_last_review_age = log(as.integer(last_review_age))) %>%
+  ggplot(mapping = aes(x = room_type, y = log_last_review_age)) +
+  geom_violin()
+
+```
+
+# Geographic analysis
+
+
+```{r}
+
+neighbourhood_group_counts <- df %>%
+  count(neighbourhood_group)
+
+ggplot(neighbourhood_group_counts, aes(x = "", y = n, fill = neighbourhood_group)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start = 0) +
+  theme_void() #+
+```
+
+```{r}
+
+ggplot(df, aes(x = distance_from_center, y = price, color = neighbourhood_group)) +
+  geom_point() +
+  theme_minimal()
+
+```
+
+
+
+```{r}
+
+ggplot(df, mapping = aes(y = log_price, x = neighbourhood_group)) +
+  geom_boxplot()
+
+```
+
+```{r}
+
+df %>%
+  filter(log_price >= 0) %>% 
+  ggplot(mapping = aes(x = log_price, y = neighbourhood_group)) +
+  geom_density_ridges(alpha = 0.5)
+
+```
+
+```{r}
+
+df %>%
+  ggplot(mapping = aes(x = distance_from_center, y = neighbourhood_group)) +
+  geom_density_ridges(alpha = 0.5)
+
+```
+
+```{r}
+
+df %>%
+  ggplot(mapping = aes(x = room_type, y = distance_from_center)) +
+  geom_boxplot()
+
+```
+
+```{r}
+
+df %>%
+  ggplot(mapping = aes(x = longitude, y = latitude, color = room_type)) +
+  geom_point()
+
+```
+
+```{r}
+
+plots <- lapply(unique(df$room_type), function(r_type) {
+  print(r_type)
+  df %>%
+    filter(room_type == r_type) %>%
+    ggplot(mapping = aes(x = longitude, y = latitude)) +
+    geom_point() +
+    ggtitle(r_type)
+})
+grid.arrange(grobs = plots, ncol = 3)
+
+```
+
+# Most expensive neighbourhoods
+
+```{r}
+
+get_most_expensive_neighbourhoods_in_group <- function(group) {
+  most_expensive_neighbourhoods <- df %>%
+    filter(neighbourhood_group == group) %>%
+    group_by(neighbourhood) %>%
+    summarize(sum_price = sum(price)) %>%
+    arrange(desc(sum_price))
+  
+  tmp_df <- df %>%
+      filter(neighbourhood_group == group) %>%
+      group_by(neighbourhood, room_type) %>%
+      summarise(sum_price = sum(price)) %>%
+      arrange(match(neighbourhood, most_expensive_neighbourhoods$neighbourhood)) %>%
+      mutate(neighbourhood = as.factor(neighbourhood)) %>%
+      head(20)
+
+  ?reorder
+  return(
+    tmp_df %>%
+      ggplot(mapping = aes(x = factor(neighbourhood, level = most_expensive_neighbourhoods$neighbourhood), y = sum_price, fill = room_type)) +
+      geom_col(stat = "identity") +
+      labs(
+        title = paste("Most expensive neighbourhoods in", group),
+        x = "Neighbourhood",
+        y = "Price in $"
+      )
+  )
+}
+
+```
+
+## Queens
+
+```{r}
+
+get_most_expensive_neighbourhoods_in_group("Queens")
+
+```
+
+## Brooklyn
+
+```{r}
+
+get_most_expensive_neighbourhoods_in_group("Brooklyn")
+
+```
+
+## Manhattan
+
+```{r}
+
+get_most_expensive_neighbourhoods_in_group("Manhattan")
+
+```
+
+## Staten Island
+
+```{r}
+
+get_most_expensive_neighbourhoods_in_group("Staten Island")
+
+```
+
+## Bronx
+
+```{r}
+
+get_most_expensive_neighbourhoods_in_group("Bronx")
+
+```
+
+
+```{r}
+most_expensive_neighbourhoods <- df %>%
+  filter(neighbourhood_group == "Queens") %>%
+  group_by(neighbourhood) %>%
+  summarize(sum_price = sum(price)) %>%
+  arrange(desc(sum_price)) %>%
+  select(neighbourhood, sum_price)
+  #head(8)
+
+most_expensive_neighbourhoods
+```
+
+
+```{r}
+
+df %>%
+  filter(neighbourhood_group == "Queens") %>%
+  group_by(neighbourhood, room_type) %>%
+  summarise(sum_price = sum(price)) %>%
+  arrange(match(neighbourhood, most_expensive_neighbourhoods$neighbourhood))
+
+```
+
+
+```{r}
+result_df <- df %>%
+  filter(neighbourhood_group == "Queens") %>%
+  group_by(neighbourhood, room_type) %>%
+  summarize(mean_price = mean(price)) %>%
+  arrange(desc(mean_price)) %>%
+  head(8)
+
+result_df
+```
+
+
+```{r}
+
+get_most_expensive_neighbourhoods_in_group("Queens")
+
+```
+

@@ -20,7 +20,7 @@ Set up workspace, i.e., remove all existing data from working memory and load da
 ```{r setup}
 
 rm( list=ls() )
-df <- read.csv("./data/airbnb_data.csv")
+df <- read.csv("C:/Users/Luisa/OneDrive/!Master Social Research/23W/Programming for Data Analytics/R/Airbnb/airbnb_data.csv")
 
 ```
 
@@ -193,6 +193,8 @@ barplot(table(df$price_bin), main="Distribution of Price Bins", xlab="Price Bins
 The listings are distributed across the bins, though there is less data for the two highest price categories.
 Most listings are in bins 2 and 3, i.e., between $51 and $500. The adjacent bins 1 and 4 are also well-represented.
 
+
+
 # Consistency
 
 ## Min/max
@@ -212,6 +214,29 @@ summary(df_numeric)
 ```
 
 All numeric variables (except longitude) have non-negative values. Max for availability_365 is 365.
+
+Price: Minimum value of 0, likely indicating missing data rather than actual free listings.
+Minimum Nights: A maximum of 1250 nights suggests potential outliers.
+
+Check entries with price equal to 0.
+
+```{r}
+df[df$price == 0, ]
+```
+
+All but one listing have a non-zero number of reviews, which suggests they are legitimate listings.
+All but one listing have non-null values for reviews_per_month, indicating recent activity.
+Most listings have availability days (availability_365 > 0), indicating that they can be booked.
+
+Replace $0 listings with NA assuming they represent missing data and exclude one implausible listing.
+
+```{r}
+
+df$price[df$price == 0] <- NA
+df <- df[!(df$price == 0 & df$id == 20933849), ]
+
+```
+
 
 ## Unique ids
 
@@ -288,6 +313,8 @@ str(df)
 df %>%
   filter(latitude == 40.75362	)#, longitude == -73.97237	)
 
+View(df)
+
 ```
 
-
+Listings in the same location could be apartments in the same building complex.

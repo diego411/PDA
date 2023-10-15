@@ -20,7 +20,7 @@ Set up workspace, i.e., remove all existing data from working memory and load da
 ```{r setup}
 
 rm( list=ls() )
-df <- read.csv("./data/airbnb_data.csv")
+df <- read.csv("C:/Users/Luisa/OneDrive/!Master Social Research/23W/Programming for Data Analytics/R/Airbnb/airbnb_data.csv")
 
 ```
 
@@ -184,14 +184,31 @@ df <- df_log
 Bin price and check the distribution across bins.
 
 ```{r}
+
 bins <- c(0, 50, 100, 200, 500, 1000, 10000)
 labels <- c("0-50", "51-100", "101-200", "201-500", "501-1000", "1001+")
-df$price_bin <- cut(df$price, breaks = bins, labels = labels, include.lowest = TRUE, right = FALSE)
-table(df$price_bin)
-barplot(table(df$price_bin), main="Distribution of Price Bins", xlab="Price Bins", ylab="Frequency")
+df %>%
+  mutate(price_bin = cut(price, breaks = bins, labels = labels, include.lowest = TRUE, right = FALSE)) %>%
+  count(price_bin) %>%
+  ggplot(aes(x = price_bin, y = n)) +
+  geom_col() +
+  labs(title="Distribution of Price Bins", x="Price Bins", y="Frequency")
+
+
 ```
+
 The listings are distributed across the bins, though there is less data for the two highest price categories.
 Most listings are in bins 2 and 3, i.e., between $51 and $500. The adjacent bins 1 and 4 are also well-represented.
+
+Create a variable that counts the characters in a name.
+
+```{r}
+
+df <- df %>%
+  mutate(name_length = nchar(name))
+
+```
+
 
 # Consistency
 
@@ -212,6 +229,25 @@ summary(df_numeric)
 ```
 
 All numeric variables (except longitude) have non-negative values. Max for availability_365 is 365.
+
+Price: Minimum value of 0, likely indicating missing data rather than actual free listings.
+Minimum Nights: A maximum of 1250 nights suggests potential outliers.
+
+Check entries with price equal to 0
+
+```{r}
+df[df$price == 0, ]
+```
+
+All but one listing have a non-zero number of reviews and non-null values for reviews_per_month, which suggests they are legitimate listings with recent activity.
+
+Remove the implausible listing and change the price for the others to NA.
+
+```{r}
+df$price[df$price == 0] <- NA
+df <- df[!(df$price == 0 & df$id == 20933849), ]
+```
+
 
 ## Unique ids
 

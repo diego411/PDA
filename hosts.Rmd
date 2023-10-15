@@ -1,0 +1,212 @@
+---
+title: "gender_analysis"
+output: html_document
+date: "2023-10-14"
+---
+Load required packages.
+
+```{r setup, include=FALSE}
+#install.packages("gender")
+library(gender)
+rm(list=ls())
+```
+
+
+Set up workspace, i.e., remove all existing data from working memory, initialize the random number generator, turn of scientific notation of large numbers, set a standard theme for plotting, etc.
+
+```{r}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+rm(list=ls())
+set.seed(42)
+options(scipen=10000)
+```
+
+
+Load data from CSV file.
+
+```{r}
+airbnb_df <- read.csv("airbnb_data.csv", header=TRUE)
+```
+
+Oftentimes, there is more than one host and there are several options to how (+ , /, and &). Clean host name column so that function can be used on these as well. 
+Careful! Name Andrea 
+
+1852 times where more than one name found
+
+```{r}
+#adds boolean column that indicatess whether name contains " and " (to make sure names like Andrea do not fall under this) "+", "/" or "&"
+airbnb_df$host_name_temp <- grepl(" and |&|\\+|/", airbnb_df$host_name, ignore.case = TRUE)
+#adds column that contains vector of all names if more than one
+airbnb_df$host_name_splitted <- ifelse(airbnb_df$host_name_temp == TRUE, strsplit(airbnb_df$host_name, "(?i) and |&| & |\\+| \\+ |/| / ", perl=TRUE), c(""))
+head(airbnb_df)
+#count rows where this is the case
+nrow(airbnb_df[airbnb_df$host_name_splitted != '', ])
+class(airbnb_df$host_name_splitted)
+#maybe try a vector this is a list and then separate rows
+airbnb_df <- airbnb_df %>% filter(lengths(host_name_splitted) > 0) %>%
+  unnest(host_name_splitted) 
+#add names where empty to splitted column so the original is untouched
+```
+
+Use the gender package (gitHub-Link) to assign a sex/gender to each host name. 
+
+```{r}
+'host_names_and_id<- airbnb_df[c("host_name", "host_id", "neighbourhood_group", "number_of_reviews", "price", "calculated_host_listings_count")]
+host_names_and_id_100 <- host_names_and_id[1:100,]
+host_names <- airbnb_df$host_name 
+host_names_100 <- host_names[1:100]
+host_names_100_gender <- gender(host_names_100, year=2010, method="ssa")
+host_names_100_gender <- distinct(host_names_100_gender)
+host_names_100_gender <- host_names_100_gender %>% rename(host_name = name)
+host_names_gender <- host_names_and_id_100 %>%  left_join(host_names_100_gender, by = "host_name")
+host_names_gender <- subset(host_names_gender, select = -c(proportion_male, proportion_female, year_min, year_max))
+host_names_gender'
+
+
+
+chunksize <- 100 
+min <- 1
+max <- 100
+for(i in 1:ceiling(nrow(airbnb_df)/chunksize)){
+  max <- ifelse(max>nrow(airbnb_df), nrow(airbnb_df), max)
+  row_slice_100 <- airbnb_df[min:max,]
+  host_names_100 <- row_slice_100$host_name 
+  host_names_100_gender <- gender(host_names_100, year=2010, method="ssa")
+  host_names_100_gender <- distinct(host_names_100_gender)
+  host_names_100_gender <- host_names_100_gender %>% rename(host_name = name)
+  #host_names_gender <- host_names_and_id_100 %>%  left_join(host_names_100_gender, by = "host_name")
+  host_names_gender <- subset(host_names_100_gender, select = -c(proportion_male, proportion_female, year_min, year_max))
+  min <- min+100
+  max <- max+100
+}
+```
+
+Number of hosts female vs male vs no data: 
+```{r}
+gender_counts <- host_names_gender %>%
+  group_by(gender) %>%
+  summarize(count = n())
+
+total_count <- sum(gender_counts$count)
+
+# Create a pie chart
+ggplot(gender_counts, aes(x = "", y = count, fill = gender)) +
+  geom_bar(stat = "identity") +
+  coord_polar("y") +
+  labs(title = "Gender Distribution") +
+  theme_void() + 
+  geom_text(aes(label = paste0(gender, "\n", count, " (", scales::percent(count / total_count), ")")), 
+            position = position_stack(vjust = 0.5))
+```
+Remove N/A values: 
+
+```{r}
+host_names_gender <- host_names_gender %>% filter(!is.na(gender))
+
+gender_counts <- host_names_gender %>%
+  group_by(gender) %>%
+  summarize(count = n())
+
+total_count <- sum(gender_counts$count)
+
+# Create a pie chart
+ggplot(gender_counts, aes(x = "", y = count, fill = gender)) +
+  geom_bar(stat = "identity") +
+  coord_polar("y") +
+  labs(title = "Gender Distribution") +
+  theme_void() + 
+  geom_text(aes(label = paste0(gender, "\n", count, " (", scales::percent(count / total_count), ")")), 
+            position = position_stack(vjust = 0.5))
+```
+
+number of listings male vs female:
+
+```{r}
+
+```
+
+more than one listing male vs female:
+
+```{r}
+more_than_one_listing <- host_names_gender %>% group_by(host_id) %>%summarize(total_listing = sum(n())) 
+unique_listing_counts <- more_than_one_listing %>%
+  distinct(host_id, total_listing)
+merged_data <- host_names_gender %>% left_join(unique_listing_counts, by="host_id") %>% filter(total_listing > 1) %>% distinct(host_id, host_name, gender, total_listing)
+merged_data
+```
+
+FURTHER: See if N/A ist mostly more than one person or groups, maybe they often have more than one listing
+
+male vs female neighbourhoods:
+```{r}
+df_counts <- df_counts %>%
+  group_by(neighbourhood_group) %>%
+  mutate(percentage = count / sum(count) * 100)
+
+# Create the stacked bar chart
+p <- ggplot(df_counts, aes(x = neighbourhood_group, y = percentage, fill = gender)) +
+  geom_bar(stat = "identity") +
+  labs(
+    title = "Listings by Neighborhood and Gender",
+    x = "Neighborhood",
+    y = "Percentage"
+  )
+
+# Annotate the bars with percentages adding up to 100%
+p + geom_text(aes(label = scales::percent(percentage / 100)), position = position_stack(vjust = 0.5))
+```
+
+Boxplot number of reviews by gender:
+TODO: Add a pyramid chart (wie oft demographics in einem Land dargestellt werden)
+
+```{r}
+ggplot(host_names_gender, aes(x = gender, y = number_of_reviews)) +
+  geom_boxplot() +
+  labs(
+    title = "Number of Reviews by Gender",
+    x = "Gender",
+    y = "Number of Reviews"
+  )
+
+ggplot(host_names_gender, aes(x = gender, y = number_of_reviews)) +
+  geom_violin() +
+  labs(
+    title = "Number of Reviews by Gender (Violin Plot)",
+    x = "Gender",
+    y = "Number of Reviews"
+  )
+
+```
+
+boxplot price by gender
+
+```{r}
+ggplot(host_names_gender, aes(x = gender, y = price)) +
+  geom_boxplot() +
+  labs(
+    title = "Price by Gender",
+    x = "Gender",
+    y = "Price"
+  )
+
+ggplot(host_names_gender, aes(x = gender, y = price)) +
+  geom_violin() +
+  labs(
+    title = "Number of Reviews by Gender (Violin Plot)",
+    x = "Gender",
+    y = "Number of Reviews"
+  )
+```
+
+Boxplot by calculated_host_listings_count
+
+```{r}
+ggplot(host_names_gender, aes(x = gender, y = calculated_host_listings_count)) +
+  geom_boxplot() +
+  labs(
+    title = "calculated_host_listings_count by Gender",
+    x = "Gender",
+    y = "calculated_host_listings_count"
+  )
+```
+

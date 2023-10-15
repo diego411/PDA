@@ -1,3 +1,8 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
 # AirBnb
 
 Load required packages.
@@ -253,12 +258,19 @@ plot_map <- function (df, zoom, ratio) {
   
   map_max <- nrow(df) * ratio
   
+  label_opt <- labelOptions(noHide = T, textsize = "10px")
+  
   df %>%
     leaflet() %>%
     addTiles() %>%
     addProviderTiles(providers$OpenStreetMap.DE) %>%
     setView(center_lng, center_lat, zoom) %>%
-    addHeatmap(lng = ~longitude, lat = ~latitude, max = map_max, radius = 20, blur = 10)
+    addHeatmap(lng = ~longitude, lat = ~latitude, max = map_max, radius = 20, blur = 10) %>%
+    addCircleMarkers(lat = 40.6897, lng = -74.0445, label = "Statue of Liberty", labelOptions = label_opt) %>%
+    addCircleMarkers(lat = 40.7484, lng = -73.9856, label = "Empire State Building") %>%
+    addCircleMarkers(lat = 40.7826, lng = -73.9655, label = "Central Park") %>%
+    addCircleMarkers(lat = 40.7579, lng = -73.9855, label = "Times Square") %>%
+    addCircleMarkers(lat = 40.7061, lng = -73.9967, label = "Brooklyn Bridge")
 }
 
 ```
@@ -280,7 +292,6 @@ manhattan <- df %>%
 plot_map(manhattan, 11.5, ratio = 0.02)
 
 ```
-
 
 ## Bronx
 
@@ -326,6 +337,23 @@ plot_map(brooklyn, 11, ratio = 0.05)
 
 # Geographic distribution of room types
 
+```{r}
+
+plot_cluster_map <- function(df, zoom) {
+  center_lng <- (df %>% summarize(mean(longitude)))[1, 1]
+  center_lat <- (df %>% summarize(mean(latitude)))[1, 1]
+    
+  df %>%
+    leaflet() %>%
+    addTiles() %>%
+    addProviderTiles(providers$OpenStreetMap.DE) %>%
+    setView(center_lng, center_lat, zoom) %>%
+    addMarkers(lng = ~longitude, lat = ~latitude, clusterOptions = markerClusterOptions(), label = ~name)
+}
+
+```
+
+
 ## Private room
 
 ```{r}
@@ -334,6 +362,12 @@ private_room <- df %>%
   filter(room_type == "Private room")
 
 plot_map(private_room, 11, ratio = 0.03)
+
+```
+
+```{r}
+
+plot_cluster_map(private_room, 10)
 
 ```
 
@@ -348,6 +382,13 @@ plot_map(entire_home, 11, ratio = 0.03)
 
 ```
 
+```{r}
+
+plot_cluster_map(entire_home, 10)
+
+```
+
+
 ## Shared room
 
 ```{r}
@@ -358,6 +399,13 @@ shared_room <- df %>%
 plot_map(shared_room, 11, ratio = 0.03)
 
 ```
+
+```{r}
+
+plot_cluster_map(shared_room, 10)
+
+```
+
 
 # Most expensive listing position
 
@@ -372,7 +420,7 @@ plot_marker_map <- function(df, zoom) {
     addTiles() %>%
     addProviderTiles(providers$OpenStreetMap.DE) %>%
     setView(center_lng, center_lat, zoom) %>%
-    addMarkers(lng = ~longitude, lat= ~latitude)
+    addCircleMarkers(lng = ~longitude, lat= ~latitude, label = ~name)
 }
 
 ```
@@ -381,7 +429,7 @@ plot_marker_map <- function(df, zoom) {
 
 most_expensive <- df %>%
   arrange(desc(price)) %>%
-  head(20)
+  head(10)
 
 plot_marker_map(most_expensive, 11)
 
@@ -391,18 +439,9 @@ plot_marker_map(most_expensive, 11)
 
 least_expensive <- df %>%
   arrange(price) %>%
-  head(20)
+  head(10)
 
 plot_marker_map(least_expensive, 11)
-
-```
-
-```{r}
-
-df_sf <- st_as_sf(df, coords = c("longitude", "latitude"))
-df_sf <- st_set_crs(df_sf, st_crs(4326))
-map <- mapview(df_sf)
-map <- addHeatmap(map, df_sf, intensity = 1, blur = 50)
 
 ```
 

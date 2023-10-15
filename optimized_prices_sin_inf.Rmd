@@ -1,0 +1,285 @@
+---
+title: "optimized_price_sin_inf"
+output: html_document
+date: "2023-10-14"
+---
+
+# General Preparation
+
+load packages
+
+```{r load packages}
+
+library(tidyverse)
+library(scales)
+library(gridExtra)
+library(stargazer)
+
+```
+
+setup workspace: clear memory, load data (already cleaned, see data_cleaning.rmd)
+
+```{r setup}
+
+rm(list = ls())
+airbnb_df <- read_csv("airbnb_clean.csv")
+
+```
+
+# Theoretical Considerations
+
+Applying neoclassical economic theory, Airbnb as a platform is to be conceived 
+as a market for accomodations, that is able to distribute rooms and appartments
+according to the dynamics of provided quality and individual needs and buying powers. 
+
+For this paragraph, assume that prices are fixed, meaning that listings' prices are
+equal, independent of any qualities they may comprise.
+Listings come with differentiating qualities, such as room type or distance to city
+center, that make them more or less desirable. Assuming, that agents' overall
+preferences are homogenous, the demand for a listing increases with its quality.
+Thus, the supply of higher-quality listings will come to an end first.
+
+Knowing about the potential of their capital, providers would want to profit from
+this elevated demand. Consequentially, they will increase the price to utilize
+their asset. In the same way, owners of lower-quality listings may want to lower
+their prices, to compensate low quality with lower cost, to profit from their
+listing after all.
+
+As providers use airbnb to merely advertize and organize their listing individually, 
+instead of having insight knowledge about the actual preferences of the demand
+side, airbnb might be able to compensate for this information problem as a
+"market-supervisor". Using data, we are able to equalize prices with listings'
+popularity and identify listings that are either over- or underpriced and, thus,
+underutilized overall. 
+
+This is to say, that our goal is to both increase earnings and visits, as our
+model assumed that earnings will increase with utilization of the asset, whereas
+visits increase by setting the price right.
+
+Outcome Variable: Earnings
+Predictor Variable: Price
+
+# Feature Engineering
+
+Create variable indicating listings average monthly earnings
+
+Note that we assume that every visitor leaves a review as a reputation system
+incentivizes users to do so. Note also, that we are only able to calculate
+the lowest potential earnings as we have only insight into the minimum number
+of nights visitors need to stay.
+
+```{r}
+
+# generate earnings variable
+
+airbnb_df <- airbnb_df %>%
+  mutate(lowest_monthly_earnings = minimum_nights*reviews_per_month*price)
+
+```
+
+# Data Exploration
+
+Examine summary statistics including range, and overview distribution of earnings
+
+```{r}
+
+summary(airbnb_df$lowest_monthly_earnings)
+
+max(airbnb_df$lowest_monthly_earnings) - min(airbnb_df$lowest_monthly_earnings)
+
+airbnb_df %>%
+  ggplot(aes(lowest_monthly_earnings)) +
+  geom_histogram() +
+  scale_y_continuous()
+
+```
+
+As the distribution is extremely skewed to the right, we will conduct a log-transformation
+For later modeling purposes, we will handle resulting infinite values.
+
+```{r}
+
+# log-transform earnings variable; filter out inifinite values
+
+airbnb_df <- airbnb_df %>%
+  mutate(log_earnings = log(lowest_monthly_earnings)) %>%
+  filter(is.finite(log_earnings), is.finite(log_price), is.finite(log_reviews_per_month))
+
+airbnb_df %>%
+  ggplot(aes(log_earnings)) +
+  geom_histogram() +
+  scale_x_continuous(breaks = seq(0, max(airbnb_df$log_earnings), by = 1)) +
+  labs(title="Earnings Distribution") +
+  xlab("Logged Earnings") +
+  ylab("Frequency") 
+
+```
+
+Visualize some hypotheses on differences in earnings:
+
+H1: Listings' earnings differ by location.
+H2: Earnings increase with price.
+H3: Earnings increase with visits, i.e. reviews.
+H4: 
+
+Examine H1
+
+```{r}
+
+# visualize relationship between earnings and location
+
+loc_earnings <- airbnb_df %>%
+  group_by(neighbourhood_group) %>%
+  summarize(
+    avg_earnings = as.integer(mean(lowest_monthly_earnings)),
+    tot_earnings_mio = (sum(lowest_monthly_earnings)/1000000)
+  )
+
+loc_earnings
+
+loc_earnings %>%
+  ggplot(aes(x=reorder(neighbourhood_group, +avg_earnings), y=avg_earnings)) +
+    geom_bar(stat = "identity") +
+    geom_text(aes(label = as.integer(avg_earnings)), vjust = -0.5, size = 3) +
+    scale_y_continuous(breaks = seq(0, max(loc_earnings$avg_earnings), by = 100)) +
+    labs(
+      title = "Average Monthly Earnings by Neighbourhood Group",
+      x = "Neighbourhood Group",
+      y = "Earnings in Dollar"
+    )
+
+loc_earnings %>%
+  ggplot(aes(x = reorder(neighbourhood_group, +tot_earnings_mio), y = tot_earnings_mio)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = sprintf("%.2f", tot_earnings_mio), vjust = -0.5), size = 3) +
+  scale_y_continuous(breaks = seq(0, max(loc_earnings$tot_earnings_mio))) +
+  labs(
+    title = "Total Earnings by Neighbourhood Group in Millions",
+    x = "Neighbourhood Group",
+    y = "Earnings in Million Dollar"
+  )
+
+airbnb_df %>%
+  ggplot(aes(distance_from_center, log_earnings, color = neighbourhood_group)) +
+  geom_point(color = "red", alpha = 0.1) +
+  geom_smooth(method = "lm") +
+  labs(
+    title = "Logged Earnings on City Center Distance",
+    x = "Distance from Center",
+    y = "Logged Monthly Earnings",
+    color = "Neighbourhood Group"
+  )
+  
+```
+
+For most neighbourhood groups, slightly increasing distance to the city center does not seem to affect earnings that much. For Manhattan, which is already as central as possible, the distance to the central point becomes even more important for earnings.
+
+```{r}
+
+# visualize relationship between earnings and price
+
+airbnb_df %>%
+  ggplot(aes(log_price, log_earnings, color = neighbourhood_group)) +
+  geom_point(color = "red", alpha = 0.1) +
+  geom_smooth(se = FALSE) +
+  scale_x_continuous(breaks = seq(0, max(airbnb_df$log_price), by = 1)) +
+  scale_y_continuous(breaks = seq(0, max(airbnb_df$log_earnings), by = 1)) +
+  labs(
+    title = "Logged Earnings on Logged Price",
+    x = "Logged Price",
+    y = "Logged Monthly Earnings"
+  )
+
+```
+Unsurprisingly, earnings increase quite linearly with price. However, this relationship seem to be mediated by neighbourhood group. To keep earnings as high as possible, price should be kept fixed at approximately exp(6.5) for Staten Island and Bronx.
+
+
+```{r}
+
+# visualize relation between earnings and monthly revies (i.e. visits) via scatterplot
+
+p1 <- airbnb_df %>%
+  ggplot(aes(log_reviews_per_month, log_earnings, color = neighbourhood_group)) +
+  geom_point(color = "red", alpha = 0.1) +
+  geom_smooth(se = FALSE) +
+  labs(
+    title = "Earnings on Visits",
+    x = "Logged Monthly Reviews",
+    y = "Logged Earnings",
+    color = "Neighbourhood Group"
+  )
+
+# visualize earnings by room type via bar plot
+
+p2 <- airbnb_df %>%
+  ggplot(aes(room_type, log_earnings)) +
+  geom_bar(stat = "identity") +
+  labs(
+    title = "Earnings by Room Type",
+    x = "Room Type",
+    y = "Logged Monthly Earnings"
+  )
+
+p1
+p2
+grid.arrange(p1, p2) 
+
+```
+
+```{r}
+
+# examine relationship between price and reviews, i.e. visits:
+
+
+correlation <- cor(x = airbnb_df$log_price, y = airbnb_df$log_reviews_per_month, method = "pearson")
+correlation
+
+airbnb_df %>%
+  ggplot(aes(log_price, log_reviews_per_month, color = neighbourhood_group)) +
+  geom_point(color = "red", alpha = 0.1) +
+  geom_smooth()
+
+```
+
+There is as good as no correlation between reviews per month and price. However, we can identify an upper price threshold that limits people from booking a listing.
+
+
+Model Building
+
+```{r}
+
+# model to predict earnings
+
+m0 <- lm(log_earnings~1, data = airbnb_df)
+m1 <- lm(log_earnings~neighbourhood_group, data = airbnb_df)
+m2 <- lm(log_earnings~distance_from_center, data = airbnb_df)
+m3 <- lm(log_earnings~room_type, data = airbnb_df)
+m4 <- lm(log_earnings~neighbourhood_group+room_type, data = airbnb_df)
+m5 <- lm(log_earnings~distance_from_center+room_type, data = airbnb_df)
+
+stargazer(m0, m1, m2, m3, m4, m5, type = "text")
+
+# visualize model via coefficient plot
+
+coefplot(m4)
+
+```
+
+The rather low R2 suggests that there is much variance in listings' earnings, that cannot be explained by their overall qualities (room type, neighbourhood).
+This suggests however, that there may be much underused potential as no market equilibria seems to have been reached.
+
+
+```{r}
+
+
+
+df <- airbnb_df %>%
+  mutate(year = format(last_review, "%Y"))
+
+year_summary <- df %>%
+  group_by(year) %>%
+  summarize(mean_price = mean(price), count = n())
+year_summary
+
+```
+

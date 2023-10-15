@@ -18,7 +18,7 @@ Set up workspace, i.e., remove all existing data from working memory and load da
 ```{r setup}
 
 rm( list=ls() )
-df <- read.csv("C:/Users/Luisa/OneDrive/!Master Social Research/23W/Programming for Data Analytics/R/Airbnb/airbnb_data.csv")
+df <- read.csv("./data/airbnb_data.csv")
 
 ```
 

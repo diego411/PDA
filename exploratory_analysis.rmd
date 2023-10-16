@@ -252,25 +252,132 @@ get_most_expensive_neighbourhoods_in_group("Queens")
 
 ```{r}
 
-plot_map <- function (df, zoom, ratio) {
+icon_width <- 30
+icon_height <- 30
+icon_base_url <- "https://img.icons8.com/?size=2x&format=png&id="
+
+statue_of_liberty_icon <- makeIcon(
+  iconUrl = paste(icon_base_url, 4674),
+  iconWidth = icon_width, iconHeight = icon_height
+)
+
+skyscraper_icon <- makeIcon(
+  iconUrl = paste(icon_base_url, "cGbCkzI99Cf8"),
+  iconWidth = icon_width, iconHeight = icon_height
+)
+
+park_icon <- makeIcon(
+  iconUrl = paste(icon_base_url, "2410"),
+  iconWidth = icon_width, iconHeight = icon_height
+)
+
+times_square_icon <- makeIcon(
+  iconUrl = paste(icon_base_url, "swhOdQ9tCaEq"),
+  iconWidth = icon_width, iconHeight = icon_height
+)
+
+bridge_icon <- makeIcon(
+  iconUrl = paste(icon_base_url, "pJmt_hefPAkD"),
+  iconWidth = icon_width, iconHeight = icon_height
+)
+
+museum_icon <- makeIcon(
+  iconUrl = paste(icon_base_url, "3496"),
+  iconWidth = icon_width, iconHeight = icon_height
+)
+
+monument_icon <- makeIcon(
+  iconUrl = paste(icon_base_url, "4703"),
+  iconWidth = icon_width, iconHeight = icon_height
+)
+
+college_icon <- makeIcon(
+  iconUrl = paste(icon_base_url, "11173"),
+  iconWidth = icon_width, iconHeight = icon_height
+)
+
+stadium_icon <- makeIcon(
+  iconUrl = paste(icon_base_url, "JlLTMd4NfTIp"),
+  iconWidth = icon_width, iconHeight = icon_height
+)
+
+airport_icon <- makeIcon(
+  iconUrl = paste(icon_base_url, "3683"),
+  iconWidth = icon_width, iconHeight = icon_height
+) 
+
+ferry_icon <- makeIcon(
+  iconUrl = paste(icon_base_url, "PLcwTvSptrJJ"),
+  iconWidth = icon_width, iconHeight = icon_height
+)
+
+room_type_icons <- iconList(
+  private_room = makeIcon(
+    iconUrl = paste(icon_base_url, "BBsnsTkuoCkC"),
+    iconWidth = icon_width, iconHeight = icon_height
+  ),
+  entire_home = makeIcon(
+    iconUrl = paste(icon_base_url, "Uc54oOGCsjOE"),
+    iconWidth = icon_width, iconHeight = icon_height
+  ),
+  shared_room = makeIcon(
+    iconUrl = paste(icon_base_url, "46791"),
+    iconWidth = icon_width, iconHeight = icon_height
+  )
+)
+
+```
+
+
+```{r}
+
+plot_map <- function (df, zoom, ratio, showMarkers) {
   center_lng <- (df %>% summarize(mean(longitude)))[1, 1]
   center_lat <- (df %>% summarize(mean(latitude)))[1, 1]
   
   map_max <- nrow(df) * ratio
   
-  label_opt <- labelOptions(noHide = T, textsize = "10px")
-  
-  df %>%
+  base_map <- df %>%
     leaflet() %>%
     addTiles() %>%
     addProviderTiles(providers$OpenStreetMap.DE) %>%
     setView(center_lng, center_lat, zoom) %>%
-    addHeatmap(lng = ~longitude, lat = ~latitude, max = map_max, radius = 20, blur = 10) %>%
-    addCircleMarkers(lat = 40.6897, lng = -74.0445, label = "Statue of Liberty", labelOptions = label_opt) %>%
-    addCircleMarkers(lat = 40.7484, lng = -73.9856, label = "Empire State Building") %>%
-    addCircleMarkers(lat = 40.7826, lng = -73.9655, label = "Central Park") %>%
-    addCircleMarkers(lat = 40.7579, lng = -73.9855, label = "Times Square") %>%
-    addCircleMarkers(lat = 40.7061, lng = -73.9967, label = "Brooklyn Bridge")
+    addHeatmap(lng = ~longitude, lat = ~latitude, max = map_max, radius = 20, blur = 10)
+  
+  if (showMarkers)
+    return(
+      base_map %>%
+        addMarkers(lat = 40.6897, lng = -74.0445, label = "Statue of Liberty", icon = statue_of_liberty_icon) %>%
+        addMarkers(lat = 40.7484, lng = -73.9856, label = "Empire State Building", icon = skyscraper_icon) %>%
+        addMarkers(lat = 40.7826, lng = -73.9655, label = "Central Park", icon = park_icon) %>%
+        addMarkers(lat = 40.7579, lng = -73.9855, label = "Times Square", icon = times_square_icon) %>%
+        addMarkers(lat = 40.7061, lng = -73.9967, label = "Brooklyn Bridge", icon = bridge_icon) %>%
+        addMarkers(lat = 40.7188, lng = -73.9900, label = "Tenement Museum", icon = museum_icon) %>%
+        addMarkers(lat = 40.7794, lng = -73.9632, label = "Metropolitan Museum of Art", icon = museum_icon) %>%
+        addMarkers(lat = 40.7029, lng = -74.0153, label = "The Battery", icon = park_icon) %>%
+        addMarkers(lat = 40.7074, lng = -73.9907, label = "Manhattan Bridge", icon = bridge_icon) %>%
+        addMarkers(lat = 40.7136, lng = -73.9719, label = "Williamsburg Bridge", icon = bridge_icon) %>%
+        addMarkers(lat = 40.7129, lng = -74.0132, label = "One World Observatory", icon = skyscraper_icon) %>%
+        addMarkers(lat = 40.7129, lng = -74.0132, label = "Stonewall National Monument", icon = monument_icon) %>%
+        addMarkers(lat = 40.7421, lng = -73.9879, label = "Madison Square Park", icon = park_icon) %>%
+        addMarkers(lat = 40.7468, lng = -73.9582, label = "Gantry Plaza State Park", icon = park_icon) %>%
+        addMarkers(lat = 40.8971, lng = -73.8862, label = "Van Cortlandt Park", icon = park_icon) %>%
+        addMarkers(lat = 40.8655, lng = -73.8943, label = "Edgar Allan Poe Cottage", icon = monument_icon) %>%
+        addMarkers(lat = 40.8729, lng = -73.8945, label = "Lehman College, CUNY", icon = college_icon) %>%
+        addMarkers(lat = 40.8774, lng = -73.8794, label = "The Museum of Bronx History", icon = museum_icon) %>%
+        addMarkers(lat = 40.8295, lng = -73.9262, label = "Yankee Stadium", icon = stadium_icon) %>%
+        addMarkers(lat = 40.7563, lng = -73.9240, label = "Museum of the Moving Image", icon = museum_icon) %>%
+        addMarkers(lat = 40.7767, lng = -73.8739, label = "LaGuardia Airport", icon = airport_icon) %>%
+        addMarkers(lat = 40.7438, lng = -73.9351, label = "LaGuardia Community College", icon = college_icon) %>%
+        addMarkers(lat = 40.6467, lng = -74.0765, label = "The Staten Island September 11th Memorial", icon = monument_icon) %>%
+        addMarkers(lat = 40.6454, lng = -74.0822, label = "Curtis High School", icon = college_icon) %>%
+        addMarkers(lat = 40.6436, lng = -74.0719, label = "Staten Island Ferry", icon = ferry_icon) %>%
+        addMarkers(lat = 40.7022, lng = -73.9958, label = "Brooklyn Bridge Park", icon = park_icon) %>%
+        addMarkers(lat = 40.6711, lng = -73.9637, label = "Brooklyn Museum", icon = museum_icon) %>%
+        addMarkers(lat = 40.6913, lng = -73.9752, label = "Fort Greene Park", icon = park_icon)
+    )
+  
+  base_map
 }
 
 ```
@@ -278,7 +385,7 @@ plot_map <- function (df, zoom, ratio) {
 
 ```{r}
 
-plot_map(df, zoom = 10, ratio = 0.05)
+plot_map(df, zoom = 10, ratio = 0.05, showMarkers = F)
 
 ```
 
@@ -289,7 +396,7 @@ plot_map(df, zoom = 10, ratio = 0.05)
 manhattan <- df %>%
   filter(neighbourhood_group == "Manhattan")
 
-plot_map(manhattan, 11.5, ratio = 0.02)
+plot_map(manhattan, 11.5, ratio = 0.02, showMarkers = T)
 
 ```
 
@@ -300,7 +407,7 @@ plot_map(manhattan, 11.5, ratio = 0.02)
 bronx <- df %>%
   filter(neighbourhood_group == "Bronx")
 
-plot_map(bronx, 11.5, ratio = 0.01)
+plot_map(bronx, 11.5, ratio = 0.01, showMarkers = T)
 
 ```
 
@@ -311,7 +418,7 @@ plot_map(bronx, 11.5, ratio = 0.01)
 queens <- df %>%
   filter(neighbourhood_group == "Queens")
 
-plot_map(queens, 11, ratio = 0.02)
+plot_map(queens, 12, ratio = 0.02, showMarkers = T)
 
 ```
 
@@ -320,7 +427,7 @@ plot_map(queens, 11, ratio = 0.02)
 staten_island <- df %>%
   filter(neighbourhood_group == "Staten Island")
 
-plot_map(staten_island, 11, ratio = 0.05)
+plot_map(staten_island, 12, ratio = 0.05, showMarkers = T)
 
 ```
 
@@ -331,7 +438,7 @@ plot_map(staten_island, 11, ratio = 0.05)
 brooklyn <- df %>%
   filter(neighbourhood_group == "Brooklyn")
 
-plot_map(brooklyn, 11, ratio = 0.05)
+plot_map(brooklyn, 12, ratio = 0.02, showMarkers = T)
 
 ```
 
@@ -354,18 +461,32 @@ plot_cluster_map <- function(df, zoom) {
 ```
 
 
+```{r}
+
+test_map <- function(df, zoom) {
+  center_lng <- (df %>% summarize(mean(longitude)))[1, 1]
+  center_lat <- (df %>% summarize(mean(latitude)))[1, 1]
+    
+  df %>%
+    leaflet() %>%
+    addTiles() %>%
+    addProviderTiles(providers$OpenStreetMap.DE) %>%
+    setView(center_lng, center_lat, zoom) %>%
+    addMarkers(lng = ~longitude, lat = ~latitude, icon = ~room_type_icons[room_type])
+}
+
+
+test_map(manhattan, 11)
+
+```
+
+
 ## Private room
 
 ```{r}
 
 private_room <- df %>%
   filter(room_type == "Private room")
-
-plot_map(private_room, 11, ratio = 0.03)
-
-```
-
-```{r}
 
 plot_cluster_map(private_room, 10)
 
@@ -378,16 +499,9 @@ plot_cluster_map(private_room, 10)
 entire_home <- df %>%
   filter(room_type == "Entire home/apt")
 
-plot_map(entire_home, 11, ratio = 0.03)
-
-```
-
-```{r}
-
 plot_cluster_map(entire_home, 10)
 
 ```
-
 
 ## Shared room
 
@@ -396,22 +510,15 @@ plot_cluster_map(entire_home, 10)
 shared_room <- df %>%
   filter(room_type == "Shared room")
 
-plot_map(shared_room, 11, ratio = 0.03)
-
-```
-
-```{r}
-
 plot_cluster_map(shared_room, 10)
 
 ```
-
 
 # Most expensive listing position
 
 ```{r}
 
-plot_marker_map <- function(df, zoom) {
+plot_marker_map <- function(df, zoom, color) {
   center_lng <- (most_expensive %>% summarize(mean(longitude)))[1, 1]
   center_lat <- (most_expensive %>% summarize(mean(latitude)))[1, 1]
 
@@ -420,7 +527,7 @@ plot_marker_map <- function(df, zoom) {
     addTiles() %>%
     addProviderTiles(providers$OpenStreetMap.DE) %>%
     setView(center_lng, center_lat, zoom) %>%
-    addCircleMarkers(lng = ~longitude, lat= ~latitude, label = ~name)
+    addCircleMarkers(lng = ~longitude, lat= ~latitude, label = ~name, color = color)
 }
 
 ```
@@ -431,7 +538,7 @@ most_expensive <- df %>%
   arrange(desc(price)) %>%
   head(10)
 
-plot_marker_map(most_expensive, 11)
+plot_marker_map(most_expensive, 11, "red")
 
 ```
 
@@ -441,7 +548,7 @@ least_expensive <- df %>%
   arrange(price) %>%
   head(10)
 
-plot_marker_map(least_expensive, 11)
+plot_marker_map(least_expensive, 11, "blue")
 
 ```
 

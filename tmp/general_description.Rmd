@@ -1,0 +1,170 @@
+# General Description of Data
+
+## Data Overview
+The dataset contains information related to Airbnb listings in New York City. Each row in the dataset corresponds to a unique listing with its own identifier and has associated attributes like the type of room, neighborhood details, price, reviews, and the physical coordinates of the listing. Also provided are the name of the listing and the host's name as given on the Airbnb platform as well as how many listings each hosts entertains in total and for how many days each listing is available in a year.
+
+### Dataset Size
+```{r}
+cat(paste("Total number of listings:", nrow(df)), "\n")
+cat(paste("Total number of unique hosts:", length(unique(df$host_id))), "\n")
+```
+The dataset contains a total of 48,843 listings. These listings come from 37,420 unique hosts. This suggests that while many hosts have a single listing, there's a considerable number of hosts with multiple listings.
+
+
+### Time Span Covered
+```{r}
+cat(paste("Earliest review date:", min(df$last_review, na.rm = TRUE)), "\n")
+cat(paste("Latest review date:", max(df$last_review, na.rm = TRUE)), "\n")
+cat(paste("Time span covered:", 
+          as.numeric(difftime(max(df$last_review, na.rm = TRUE), 
+                              min(df$last_review, na.rm = TRUE), units = "days")), "days"), "\n")
+```
+The dataset spans over a period of 3,024 days, i.e., approximately 8.3 years. The earliest review date on record is March 28, 2011, the latest review is from July 8, 2019. 
+
+
+### Descriptive Statistics of Continuous Variables
+```{r}
+# Summary statistics
+summary(df[,c('price', 'minimum_nights', 'number_of_reviews', 'reviews_per_month', 'calculated_host_listings_count', 'availability_365')])
+
+# Price
+cat(paste("Average price:", round(mean(df$price, na.rm = TRUE), 2)), "\n")
+
+# Minimum Nights
+cat(paste("Average minimum nights:", 
+          round(mean(df$minimum_nights, na.rm = TRUE), 2)), "\n")
+
+# Listing Activity Overview
+active_listings_past_year <- 
+cat(paste("Number of listings with reviews in the past year:", 
+          sum(df$last_review > as.Date(latest_review) - 365, na.rm = TRUE)), "\n")
+
+# Host Overview
+listings_per_host <- table(df$host_id)
+multiple_listings_hosts <- sum(listings_per_host > 1)
+
+cat(paste("Number of hosts with multiple listings:", multiple_listings_hosts), "\n")
+```
+
+The price of listings varies widely, ranging from $0 listings to luxurious options priced at $10,000. On average, a guest can expect to pay around $152.8 per night, with half of the listings priced at or below $106.
+
+The minimum nights required by hosts shows a broad spread as well, though the typical (median) stay requirement is just 3 nights. On average, listings require stays of about a week (7 nights). This indicates that while most hosts are looking for short to medium-term stays, there are a few outliers.
+
+As for guest feedback, some listings have yet to be reviewed, while others have as many as 629 reviews. The average listing has been reviewed about 23 times. This diversity in reviews shows the variance of listing popularity and guest traffic.
+
+At least 50 % of hosts offer only one listing, with some hosts offering up to 327 apartments in NYC. 
+
+Listings are in part not available for rent at all, the median availability is 45 days out of the 365 days in a year.
+
+
+### Location
+```{r}
+cat("Number of unique neighbourhood groups:", 
+    length(unique(df$neighbourhood_group)), "\n")
+
+cat(paste("Number of unique neighbourhoods:", 
+          length(unique(df$neighbourhood))), "\n")
+
+# Top neighbourhoods
+top_neighbourhoods <- head(sort(table(df$neighbourhood), decreasing = TRUE), 5)
+cat("Top 5 neighbourhoods by number of listings:\n")
+print(top_neighbourhoods)
+
+# Least popular neighbourhoods
+bottom_neighbourhoods <- head(sort(table(
+  df$neighbourhood), decreasing = FALSE), 5)
+
+cat("Bottom 5 neighbourhoods by number of listings:\n")
+print(bottom_neighbourhoods)
+
+# Listings by neighbourhood group
+cat("Number of listings by Neighbourhood Group:\n")
+table(df$neighbourhood_group)
+
+# Listings by room type
+cat("Number of listings by Room Type:\n")
+table(df$room_type)
+
+# Bar plot of listings by neighbourhood group:
+df %>% 
+  filter(!is.na(neighbourhood_group)) %>% 
+  ggplot(aes(x = neighbourhood_group)) + 
+  geom_bar() + 
+  labs(
+    title = "Listings by Neighbourhood Group", 
+    x = "Neighbourhood Group", 
+    y = "Frequency"
+  )
+
+# Heat map of listings
+ggplot(df, aes(x=longitude, y=latitude)) + 
+  geom_density_2d_filled(show.legend = TRUE, aes(fill = ..level..)) + 
+  coord_cartesian(xlim = c(-74.08, -73.85), ylim = c(40.64, 40.86)) + 
+  labs(title="Density Heatmap of Listings", x="Longitude", y="Latitude")
+
+```
+
+Location plays a vital role in the dataset. The top 5 neighbourhoods feature up to 3,917 listings, while the least popular neighbourhoods only have one listing. Most listings in the dataset are in Manhattan and Brooklyn.
+
+The majority of the listings are for entire homes/apartments (25,393), followed by private rooms (22,306), and a relatively smaller number are shared rooms (1,159).
+
+### Room types
+```{r}
+cat("Number of unique room types:", length(unique(df$room_type)), "\n")
+
+# Distribution of Room Type
+df %>% 
+  filter(!is.na(neighbourhood_group)) %>% 
+  ggplot(aes(x=room_type)) + 
+  geom_bar() + 
+  labs(title="Distribution of Room Types", x="Room Type", y="Frequency")
+
+# Geographic distribution of private room vs. apartment
+df %>% 
+  filter(room_type %in% c('Private room', 'Entire home/apt')) %>% 
+  ggplot(aes(x = longitude, y = latitude, color = room_type)) + 
+  geom_point() + 
+  scale_color_manual(values = c("Private room" = "blue", 
+                                "Entire home/apt" = "red")) +
+  labs(title = "Geographic Distribution of 'Private Room' vs. 'Entire home/apt'",
+       x = "Longitude", 
+       y = "Latitude",
+       color = "Room Type")
+
+# Bar plot of Room Types by location
+df %>% 
+  filter(!is.na(neighbourhood_group)) %>% 
+  ggplot(aes(x=neighbourhood_group, fill=room_type)) + 
+  geom_bar(position="dodge") +
+  labs(title="Distribution of Room Types by Neighbourhood Group", 
+       x="Neighborhood", 
+       y="Frequency")
+
+```
+
+Only few listing are of a shared room. 
+
+Listings for an entire home/apt are more expensive, followed by private and shared rooms.
+
+In Manhattan, most listings are for an entire home/apartment, while in other neighborhoods, private rooms dominate. Brooklyn stands out as a balanced neighborhood with almost equal representation of both types.
+
+
+### Listing Activity
+```{r}
+cat(paste("Number of listings with reviews in the past year:", sum(df$last_review > as.Date(latest_review) - 365, na.rm = TRUE)), "\n")
+```
+Out of the entire dataset, 29,118 listings have had a review in the past year. This suggests that a considerable number of listings are active and have had recent guests.
+
+
+## Data Transformations
+Variables such as room_type, neighbourhood_group, and neighbourhood have been transformed into factor variables for easier statistical analysis. The variable last_review has been converted into a Date object to facilitate date-time operations. Variables like price, number_of_reviews, and reviews_per_month were found to be skewed. To address this, we have generated log-transformed versions of these variables. In addition, we have created derived variables like last_review_age which indicates the time since the last review, and distance_from_center which measures the distance of the listing from the Columbus Circle in Manhattan.
+
+
+## Data Quality
+We handled missing values by replacing reviews_per_month missing values with 0, assuming no reviews mean zero reviews per month.
+
+Some listings had a price of 0, which were considered anomalies and were thus removed from the dataset. Additionally, there were certain listings with an unusually high minimum_nights value which were considered outliers and subsequently removed.
+
+No duplicates based on listing id were found. There were listings with duplicate names, but upon inspection, they were distinct listings by different hosts or in different neighborhoods. Some listings had identical geographical coordinates (longitude and latitude), but these listings had different hosts or names and varied in price. These were retained in the dataset as they are plausibly different listings at the same building or complex.
+
+

@@ -16,6 +16,8 @@ library( ggridges )
 library( mapview )
 library( leaflet )
 library( leaflet.extras )
+library( scales )
+library( stargazer )
 
 ```
 
@@ -28,65 +30,175 @@ df <- read.csv("./data/airbnb_clean.csv")
 
 ```
 
+# Feature Engineering
 
-# Some general stuff
+Create variable indicating listings average monthly earnings
 
-```{r}
-
-room_type_counts <- df %>%
-  arrange(desc(room_type)) %>%
-  count(room_type)
-
-room_type_counts
-
-ggplot(room_type_counts, aes(x = "", y = n, fill = room_type)) +
-  geom_bar(stat = "identity", width = 1) +
-  coord_polar("y", start = 0) +
-  theme_void() #+
-  #theme(legend.position="none") +
-  #geom_text(aes(y = ypos, label = room_type), color = "white", size=6) +
-  #scale_fill_brewer(palette="Set1")
-```
-
+Note that we assume that every visitor leaves a review as a reputation system
+incentivizes users to do so. Note also, that we are only able to calculate
+the lowest potential earnings as we have only insight into the minimum number
+of nights visitors need to stay.
 
 ```{r}
 
-ggplot(df, aes(x = last_review_age, y = price)) +
-  geom_point()
+df <- df %>%
+  mutate(lowest_monthly_earnings = minimum_nights*reviews_per_month*price)
 
 ```
 
-```{r}
+# Earnings analysis
 
-ggplot(df, aes(x = availability_365, y = price)) +
-  geom_point()
+## Data Exploration
 
-```
-
-```{r}
-
-ggplot(df, mapping = aes(y = log_price, x = room_type)) +
-  geom_boxplot()
-
-```
+Examine summary statistics including range, and overview distribution of earnings
 
 ```{r}
+
+summary(df$lowest_monthly_earnings)
+
+max(df$lowest_monthly_earnings) - min(df$lowest_monthly_earnings)
 
 df %>%
-  ggplot(mapping = aes(x = room_type, y = log_price)) +
-  geom_violin()
+  ggplot(aes(lowest_monthly_earnings)) +
+  geom_histogram() +
+  scale_y_continuous()
 
 ```
+
+As the distribution is extremely skewed to the right, we will conduct a log-transformation
 
 ```{r}
 
+# log-transform earnings + filter out infinite values
+df <- df %>%
+  mutate(log_earnings = log(lowest_monthly_earnings)) %>%
+  filter(is.finite(log_earnings), is.finite(log_price), is.finite(log_reviews_per_month))
+
+# store summary statistics of earnings distribution
+# upper whisker
+IQR <- IQR(df$log_earnings)
+calc_upper_whisker <- (quantile(df$log_earnings, probs = 0.75) + IQR*1.5)
+select_upper_whisker <- df$log_earnings >= calc_upper_whisker
+upper_whisker <- df$log_earnings[select_upper_whisker]
+upper_whisker <- min(upper_whisker)
+
+# lower whisker
+calc_lower_whisker <- (quantile(df$log_earnings, probs = 0.25) - IQR*1.5)
+select_lower_whisker <- df$log_earnings <= calc_lower_whisker
+lower_whisker <- df$log_earnings[select_lower_whisker]
+lower_whisker <- max(lower_whisker)
+
+# upper and lower quartile and median
+earnings_distribution <- c(
+  min(df$log_earnings), 
+  quantile(df$log_earnings, probs = c(0.25, 0.5, 0.75)),
+  max(df$log_earnings)
+)
+
+#draw histogram
 df %>%
-  filter(!is.na(last_review_age)) %>%
-  mutate(log_last_review_age = log(as.integer(last_review_age))) %>%
-  ggplot(mapping = aes(x = room_type, y = log_last_review_age)) +
-  geom_violin()
+  ggplot(aes(x = log_earnings)) +
+  geom_histogram() +
+  labs(title="Earnings Distribution") +
+  xlab("Logged Earnings") +
+  ylab("Frequency") 
+
+# draw boxplot showing delogged values
+df %>%
+  ggplot(aes(y = log_earnings)) +
+  geom_boxplot() +
+  stat_boxplot(geom = "errorbar") +
+  scale_y_continuous(breaks = c(earnings_distribution, lower_whisker, upper_whisker), 
+                     labels = as.integer(exp((c(earnings_distribution, lower_whisker, upper_whisker))))) +
+  scale_x_continuous(breaks = NULL, labels = NULL) +
+  labs(
+    y = "Lowerst Monthly Earnings (De-Logged)",
+    title = "Earnings Distribution"
+  )
+
+# violin plot by neighbourhood groups
+df %>%
+  ggplot(aes(x = reorder(neighbourhood_group, +lowest_monthly_earnings), y = log_earnings)) +
+  geom_violin(draw_quantiles = c(0.25, 0.5, 0.75), trim = TRUE) +
+  labs(
+    title = "Earnings Distribution by Earnings",
+    x = ""
+  )
+
 
 ```
+
+The lowest monthly earnings are approximately normally distributed.
+50% of listings have earned up to 225 per month. 75% of listings have earned up to 612 per month.
+There is much more variance in monthly earnings in the upper 25% of the distribution.
+As seen in the original boxplot, some outliers have extremely high earnings.
+
+
+```{r}
+# create vector inidicating position in earnings distribution
+q9 <- quantile(df$lowest_monthly_earnings, probs = 0.9)
+quantile_indicator <- ifelse(df$lowest_monthly_earnings > q9, "upper 10%", "lower 90%")
+df <- cbind(df, quantile_indicator)
+
+# 
+earningsplot_df <- df %>%
+  group_by(quantile_indicator) %>%
+  summarize(
+    tot_earnings_mio = (sum(lowest_monthly_earnings)/1000000)
+  )
+
+earningsplot_df %>%
+  ggplot(aes(quantile_indicator, tot_earnings_mio)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = sprintf("%.2f", earningsplot_df$tot_earnings_mio)), vjust = -0.5, size = 3) +
+  scale_y_continuous(breaks = seq(0, max(earningsplot_df$tot_earnings_mio), by = 3)) +
+  labs(
+    title = "Total Earnings of upper 10% and lower 90% of Distribution",
+    y = "Lowest Monthley Earnings in Mio",
+    x = NULL
+  )
+ggsave("tot_earn_by_distribution.pdf")
+
+```
+
+The upper 10% of listings earn almost 150% of the lower 90%.
+
+```{r}
+# examine how much each neighbourhood group earns and the share of room types for each
+
+earningsplot_hood_room <- df %>%
+  group_by(neighbourhood_group, room_type) %>%
+  summarize(
+    tot_earnings_mio = (sum(lowest_monthly_earnings)/1000000),
+  )
+
+n_hood <- df %>%
+  group_by(neighbourhood_group) %>%
+  summarise(
+    count = n())
+
+earningsplot_hood_room %>%
+  ggplot(aes(x = reorder(neighbourhood_group, +tot_earnings_mio), y = tot_earnings_mio, fill = room_type)) +
+  geom_bar(stat = "identity") +
+  scale_y_continuous(breaks = seq(0, 20, by = 1)) +
+  labs(
+    title = "Total Earnings by Neighbourhood and Room Type",
+    y = "Lowest Monthly Earnings in Mio",
+    x = NULL,
+    fill = "Room Type"
+  )
+
+```
+Home-type listings in Manhattan generate the most earnings
+
+```{r}
+
+# Relationships between earnings and other variables
+
+df %>%
+  ggplot(aes(x = , y = log_earnings))
+```
+
 
 # Geographic analysis
 

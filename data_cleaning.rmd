@@ -185,13 +185,14 @@ Bin price and check the distribution across bins.
 
 bins <- c(0, 50, 100, 200, 500, 1000, 10000)
 labels <- c("0-50", "51-100", "101-200", "201-500", "501-1000", "1001+")
+df <- df %>%
+  mutate(price_bin = cut(price, breaks = bins, labels = labels, include.lowest = TRUE, right = FALSE))
+
 df %>%
-  mutate(price_bin = cut(price, breaks = bins, labels = labels, include.lowest = TRUE, right = FALSE)) %>%
   count(price_bin) %>%
   ggplot(aes(x = price_bin, y = n)) +
   geom_col() +
   labs(title="Distribution of Price Bins", x="Price Bins", y="Frequency")
-
 
 ```
 

@@ -182,14 +182,31 @@ df <- df_log
 Bin price and check the distribution across bins.
 
 ```{r}
+
 bins <- c(0, 50, 100, 200, 500, 1000, 10000)
 labels <- c("0-50", "51-100", "101-200", "201-500", "501-1000", "1001+")
-df$price_bin <- cut(df$price, breaks = bins, labels = labels, include.lowest = TRUE, right = FALSE)
-table(df$price_bin)
-barplot(table(df$price_bin), main="Distribution of Price Bins", xlab="Price Bins", ylab="Frequency")
+df %>%
+  mutate(price_bin = cut(price, breaks = bins, labels = labels, include.lowest = TRUE, right = FALSE)) %>%
+  count(price_bin) %>%
+  ggplot(aes(x = price_bin, y = n)) +
+  geom_col() +
+  labs(title="Distribution of Price Bins", x="Price Bins", y="Frequency")
+
+
 ```
+
 The listings are distributed across the bins, though there is less data for the two highest price categories.
 Most listings are in bins 2 and 3, i.e., between $51 and $500. The adjacent bins 1 and 4 are also well-represented.
+
+Create a variable that counts the characters in a name.
+
+```{r}
+
+df <- df %>%
+  mutate(name_length = nchar(name))
+
+```
+
 
 # Consistency
 
@@ -210,6 +227,57 @@ summary(df_numeric)
 ```
 
 All numeric variables (except longitude) have non-negative values. Max for availability_365 is 365.
+
+
+## Price
+
+Price: Minimum value of 0, likely indicating missing data rather than actual free listings.
+Minimum Nights: A maximum of 1250 nights suggests potential outliers.
+
+Check entries with price equal to 0.
+
+```{r}
+
+df %>%
+  filter(price == 0)
+
+```
+
+Since there are only 11 listings with a price of zero, we assume this is a data gathering error and remove the respective rows.
+
+```{r}
+
+df <- df_non_zero_price <- df %>% 
+  filter(price != 0)
+
+```
+
+## Minimum nights
+
+```{r}
+
+max(df$minimum_nights)
+
+```
+
+The maximum for the variable minimum_nights is 1250, meaning that particular listing would have to be rented as a minimum for well over 3 years. This seems excessive as AirBnB in most cases is used for holidays or short to mid stays. We do not see a reason for a host to require the listing to be rented for such a long time and thus will consider it and similar entries as data anomalies.
+
+
+```{r}
+
+quantile(df$minimum_nights, 0.9999)
+
+```
+
+The minimum required nights is less than 500 for 99.99% of all listing. This number seems more or less reasonable. In the following we will therefore remove all entries that fall above this threshold.
+
+```{r}
+
+df <- df %>%
+  filter(minimum_nights <= quantile(minimum_nights, 0.9999))
+
+```
+
 
 ## Unique ids
 

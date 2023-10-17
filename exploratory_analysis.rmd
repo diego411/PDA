@@ -1,0 +1,704 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
+# AirBnb
+
+Load required packages.
+
+```{r load packages, warning=FALSE, message=FALSE}
+
+library( tidyverse )
+library( dplyr )
+library( gridExtra )
+library( ggridges )
+library( mapview )
+library( leaflet )
+library( leaflet.extras )
+library( scales )
+library( stargazer )
+
+```
+
+Set up workspace, i.e., remove all existing data from working memory and load data from CSV file.
+
+```{r setup}
+
+rm( list=ls() )
+df <- read.csv("./data/airbnb_clean.csv")
+
+```
+
+# Feature Engineering
+
+Create variable indicating listings average monthly earnings
+
+Note that we assume that every visitor leaves a review as a reputation system
+incentivizes users to do so. Note also, that we are only able to calculate
+the lowest potential earnings as we have only insight into the minimum number
+of nights visitors need to stay.
+
+```{r}
+
+df <- df %>%
+  mutate(lowest_monthly_earnings = minimum_nights*reviews_per_month*price)
+
+```
+
+# Earnings analysis
+
+## Data Exploration
+
+Examine summary statistics including range, and overview distribution of earnings
+
+```{r}
+
+summary(df$lowest_monthly_earnings)
+
+max(df$lowest_monthly_earnings) - min(df$lowest_monthly_earnings)
+
+df %>%
+  ggplot(aes(lowest_monthly_earnings)) +
+  geom_histogram() +
+  scale_y_continuous()
+
+```
+
+As the distribution is extremely skewed to the right, we will conduct a log-transformation
+
+```{r}
+
+# log-transform earnings + filter out infinite values
+df <- df %>%
+  mutate(log_earnings = log(lowest_monthly_earnings)) %>%
+  filter(is.finite(log_earnings), is.finite(log_price), is.finite(log_reviews_per_month))
+
+# store summary statistics of earnings distribution
+# upper whisker
+IQR <- IQR(df$log_earnings)
+calc_upper_whisker <- (quantile(df$log_earnings, probs = 0.75) + IQR*1.5)
+select_upper_whisker <- df$log_earnings >= calc_upper_whisker
+upper_whisker <- df$log_earnings[select_upper_whisker]
+upper_whisker <- min(upper_whisker)
+
+# lower whisker
+calc_lower_whisker <- (quantile(df$log_earnings, probs = 0.25) - IQR*1.5)
+select_lower_whisker <- df$log_earnings <= calc_lower_whisker
+lower_whisker <- df$log_earnings[select_lower_whisker]
+lower_whisker <- max(lower_whisker)
+
+# upper and lower quartile and median
+earnings_distribution <- c(
+  min(df$log_earnings), 
+  quantile(df$log_earnings, probs = c(0.25, 0.5, 0.75)),
+  max(df$log_earnings)
+)
+
+#draw histogram
+df %>%
+  ggplot(aes(x = log_earnings)) +
+  geom_histogram() +
+  labs(title="Earnings Distribution") +
+  xlab("Logged Earnings") +
+  ylab("Frequency") 
+
+# draw boxplot showing delogged values
+df %>%
+  ggplot(aes(y = log_earnings)) +
+  geom_boxplot() +
+  stat_boxplot(geom = "errorbar") +
+  scale_y_continuous(breaks = c(earnings_distribution, lower_whisker, upper_whisker), 
+                     labels = as.integer(exp((c(earnings_distribution, lower_whisker, upper_whisker))))) +
+  scale_x_continuous(breaks = NULL, labels = NULL) +
+  labs(
+    y = "Lowerst Monthly Earnings (De-Logged)",
+    title = "Earnings Distribution"
+  )
+
+# violin plot by neighbourhood groups
+df %>%
+  ggplot(aes(x = reorder(neighbourhood_group, +lowest_monthly_earnings), y = log_earnings)) +
+  geom_violin(draw_quantiles = c(0.25, 0.5, 0.75), trim = TRUE) +
+  labs(
+    title = "Earnings Distribution by Earnings",
+    x = ""
+  )
+
+
+```
+
+The lowest monthly earnings are approximately normally distributed.
+50% of listings have earned up to 225 per month. 75% of listings have earned up to 612 per month.
+There is much more variance in monthly earnings in the upper 25% of the distribution.
+As seen in the original boxplot, some outliers have extremely high earnings.
+
+
+```{r}
+# create vector inidicating position in earnings distribution
+q9 <- quantile(df$lowest_monthly_earnings, probs = 0.9)
+quantile_indicator <- ifelse(df$lowest_monthly_earnings > q9, "upper 10%", "lower 90%")
+df <- cbind(df, quantile_indicator)
+
+# 
+earningsplot_df <- df %>%
+  group_by(quantile_indicator) %>%
+  summarize(
+    tot_earnings_mio = (sum(lowest_monthly_earnings)/1000000)
+  )
+
+earningsplot_df %>%
+  ggplot(aes(quantile_indicator, tot_earnings_mio)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = sprintf("%.2f", earningsplot_df$tot_earnings_mio)), vjust = -0.5, size = 3) +
+  scale_y_continuous(breaks = seq(0, max(earningsplot_df$tot_earnings_mio), by = 3)) +
+  labs(
+    title = "Total Earnings of upper 10% and lower 90% of Distribution",
+    y = "Lowest Monthley Earnings in Mio",
+    x = NULL
+  )
+ggsave("tot_earn_by_distribution.pdf")
+
+```
+
+The upper 10% of listings earn almost 150% of the lower 90%.
+
+```{r}
+# examine how much each neighbourhood group earns and the share of room types for each
+
+earningsplot_hood_room <- df %>%
+  group_by(neighbourhood_group, room_type) %>%
+  summarize(
+    tot_earnings_mio = (sum(lowest_monthly_earnings)/1000000),
+  )
+
+n_hood <- df %>%
+  group_by(neighbourhood_group) %>%
+  summarise(
+    count = n())
+
+earningsplot_hood_room %>%
+  ggplot(aes(x = reorder(neighbourhood_group, +tot_earnings_mio), y = tot_earnings_mio, fill = room_type)) +
+  geom_bar(stat = "identity") +
+  scale_y_continuous(breaks = seq(0, 20, by = 1)) +
+  labs(
+    title = "Total Earnings by Neighbourhood and Room Type",
+    y = "Lowest Monthly Earnings in Mio",
+    x = NULL,
+    fill = "Room Type"
+  )
+
+```
+Home-type listings in Manhattan generate the most earnings
+
+```{r}
+
+# Relationships between earnings and other variables
+
+df %>%
+  ggplot(aes(x = , y = log_earnings))
+```
+
+
+# Geographic analysis
+
+```{r}
+
+neighbourhood_group_counts <- df %>%
+  count(neighbourhood_group)
+
+population_df <- data.frame(
+  neighbourhood_group = c("Manhattan", "Brooklyn", "Queens", "Staten Island", "Bronx"),
+  population = c(1600000, 2500000, 2271000, 475000, 1427000)
+)
+
+area_df <- data.frame(
+  neighbourhood_group = c("Manhattan", "Brooklyn", "Queens", "Staten Island", "Bronx"),
+  area = c(59, 180, 280, 152, 110)
+)
+
+listing_count_pie_chart <- ggplot(neighbourhood_group_counts, aes(x = "", y = n, fill = neighbourhood_group)) +
+    geom_bar(stat = "identity", width = 1) +
+    coord_polar("y", start = 0) +
+    ggtitle("Number of listings per neighbourhood group") +
+    theme_void()
+
+population_pie_chart <- ggplot(population_df, aes(x = "", y = population, fill = neighbourhood_group)) +
+    geom_bar(stat = "identity", width = 1) +
+    coord_polar("y", start = 0) +
+    ggtitle("Population per neighbourhood groups") +
+    theme_void()
+
+area_pie_chart <- ggplot(area_df, aes(x = "", y = area, fill = neighbourhood_group)) +
+    geom_bar(stat = "identity", width = 1) +
+    coord_polar("y", start = 0) +
+    ggtitle("Area per neighbourhood groups") +
+    theme_void()
+
+plots <- list(
+  listing_count_pie_chart,
+  population_pie_chart,
+  area_pie_chart
+)
+
+grid.arrange(grobs = plots, padding = 2, ncol = 2)
+
+```
+
+```{r}
+
+ggplot(df, aes(x = distance_from_center, y = price, color = neighbourhood_group)) +
+  geom_point() +
+  theme_minimal()
+
+```
+
+
+
+```{r}
+
+ggplot(df, mapping = aes(y = log_price, x = neighbourhood_group)) +
+  geom_boxplot()
+
+```
+
+```{r}
+
+df %>%
+  filter(log_price >= 0) %>% 
+  ggplot(mapping = aes(x = log_price, y = neighbourhood_group)) +
+  geom_density_ridges(alpha = 0.5)
+
+```
+
+# Most expensive neighbourhoods
+
+```{r}
+
+get_most_expensive_neighbourhoods_in_group <- function(group) {
+  most_expensive_neighbourhoods <- df %>%
+    filter(neighbourhood_group == group) %>%
+    group_by(neighbourhood) %>%
+    summarize(sum_price = sum(price)) %>%
+    arrange(desc(sum_price))
+  
+  df %>%
+    filter(neighbourhood_group == group) %>%
+    group_by(neighbourhood, room_type) %>%
+    summarise(sum_price = sum(price)) %>%
+    arrange(match(neighbourhood, most_expensive_neighbourhoods$neighbourhood)) %>%
+    mutate(neighbourhood = as.factor(neighbourhood)) %>%
+    head(20) %>%
+    ggplot(mapping = aes(x = factor(neighbourhood, level = most_expensive_neighbourhoods$neighbourhood), y = sum_price, fill = room_type)) +
+    geom_col(stat = "identity") +
+    labs(
+      title = paste("Most expensive neighbourhoods in", group),
+      x = "Neighbourhood",
+      y = "Price in $"
+    )
+}
+
+```
+
+## Queens
+
+```{r}
+
+get_most_expensive_neighbourhoods_in_group("Queens")
+
+```
+
+## Brooklyn
+
+```{r}
+
+get_most_expensive_neighbourhoods_in_group("Brooklyn")
+
+```
+
+## Manhattan
+
+```{r}
+
+get_most_expensive_neighbourhoods_in_group("Manhattan")
+
+```
+
+## Staten Island
+
+```{r}
+
+get_most_expensive_neighbourhoods_in_group("Staten Island")
+
+```
+
+## Bronx
+
+```{r}
+
+get_most_expensive_neighbourhoods_in_group("Bronx")
+
+```
+
+## Queens
+
+```{r}
+
+get_most_expensive_neighbourhoods_in_group("Queens")
+
+```
+
+# Geographic Listing density
+
+```{r}
+
+icon_width <- 30
+icon_height <- 30
+icon_base_url <- "https://img.icons8.com/?size=2x&format=png&id="
+
+statue_of_liberty_icon <- makeIcon(
+  iconUrl = paste(icon_base_url, 4674),
+  iconWidth = icon_width, iconHeight = icon_height
+)
+
+skyscraper_icon <- makeIcon(
+  iconUrl = paste(icon_base_url, "cGbCkzI99Cf8"),
+  iconWidth = icon_width, iconHeight = icon_height
+)
+
+park_icon <- makeIcon(
+  iconUrl = paste(icon_base_url, "2410"),
+  iconWidth = icon_width, iconHeight = icon_height
+)
+
+times_square_icon <- makeIcon(
+  iconUrl = paste(icon_base_url, "swhOdQ9tCaEq"),
+  iconWidth = icon_width, iconHeight = icon_height
+)
+
+bridge_icon <- makeIcon(
+  iconUrl = paste(icon_base_url, "pJmt_hefPAkD"),
+  iconWidth = icon_width, iconHeight = icon_height
+)
+
+museum_icon <- makeIcon(
+  iconUrl = paste(icon_base_url, "3496"),
+  iconWidth = icon_width, iconHeight = icon_height
+)
+
+monument_icon <- makeIcon(
+  iconUrl = paste(icon_base_url, "4703"),
+  iconWidth = icon_width, iconHeight = icon_height
+)
+
+college_icon <- makeIcon(
+  iconUrl = paste(icon_base_url, "11173"),
+  iconWidth = icon_width, iconHeight = icon_height
+)
+
+stadium_icon <- makeIcon(
+  iconUrl = paste(icon_base_url, "JlLTMd4NfTIp"),
+  iconWidth = icon_width, iconHeight = icon_height
+)
+
+airport_icon <- makeIcon(
+  iconUrl = paste(icon_base_url, "3683"),
+  iconWidth = icon_width, iconHeight = icon_height
+) 
+
+ferry_icon <- makeIcon(
+  iconUrl = paste(icon_base_url, "PLcwTvSptrJJ"),
+  iconWidth = icon_width, iconHeight = icon_height
+)
+
+room_type_icons <- iconList(
+  "Private room" = makeIcon(
+    iconUrl = paste(icon_base_url, "BBsnsTkuoCkC"),
+    iconWidth = icon_width, iconHeight = icon_height
+  ),
+  "Entire home/apt" = makeIcon(
+    iconUrl = paste(icon_base_url, "Uc54oOGCsjOE"),
+    iconWidth = icon_width, iconHeight = icon_height
+  ),
+  "Shared room" = makeIcon(
+    iconUrl = paste(icon_base_url, "46791"),
+    iconWidth = icon_width, iconHeight = icon_height
+  )
+)
+
+```
+
+
+```{r}
+
+plot_map <- function (df, zoom, ratio, showMarkers) {
+  center_lng <- (df %>% summarize(mean(longitude)))[1, 1]
+  center_lat <- (df %>% summarize(mean(latitude)))[1, 1]
+  
+  map_max <- nrow(df) * ratio
+  
+  base_map <- df %>%
+    leaflet() %>%
+    addTiles() %>%
+    addProviderTiles(providers$OpenStreetMap.DE) %>%
+    setView(center_lng, center_lat, zoom) %>%
+    addHeatmap(lng = ~longitude, lat = ~latitude, max = map_max, radius = 20, blur = 10)
+  
+  if (showMarkers)
+    return(
+      base_map %>%
+        addMarkers(lat = 40.6897, lng = -74.0445, label = "Statue of Liberty", icon = statue_of_liberty_icon) %>%
+        addMarkers(lat = 40.7484, lng = -73.9856, label = "Empire State Building", icon = skyscraper_icon) %>%
+        addMarkers(lat = 40.7826, lng = -73.9655, label = "Central Park", icon = park_icon) %>%
+        addMarkers(lat = 40.7579, lng = -73.9855, label = "Times Square", icon = times_square_icon) %>%
+        addMarkers(lat = 40.7061, lng = -73.9967, label = "Brooklyn Bridge", icon = bridge_icon) %>%
+        addMarkers(lat = 40.7188, lng = -73.9900, label = "Tenement Museum", icon = museum_icon) %>%
+        addMarkers(lat = 40.7794, lng = -73.9632, label = "Metropolitan Museum of Art", icon = museum_icon) %>%
+        addMarkers(lat = 40.7029, lng = -74.0153, label = "The Battery", icon = park_icon) %>%
+        addMarkers(lat = 40.7074, lng = -73.9907, label = "Manhattan Bridge", icon = bridge_icon) %>%
+        addMarkers(lat = 40.7136, lng = -73.9719, label = "Williamsburg Bridge", icon = bridge_icon) %>%
+        addMarkers(lat = 40.7129, lng = -74.0132, label = "One World Observatory", icon = skyscraper_icon) %>%
+        addMarkers(lat = 40.7129, lng = -74.0132, label = "Stonewall National Monument", icon = monument_icon) %>%
+        addMarkers(lat = 40.7421, lng = -73.9879, label = "Madison Square Park", icon = park_icon) %>%
+        addMarkers(lat = 40.7468, lng = -73.9582, label = "Gantry Plaza State Park", icon = park_icon) %>%
+        addMarkers(lat = 40.8971, lng = -73.8862, label = "Van Cortlandt Park", icon = park_icon) %>%
+        addMarkers(lat = 40.8655, lng = -73.8943, label = "Edgar Allan Poe Cottage", icon = monument_icon) %>%
+        addMarkers(lat = 40.8729, lng = -73.8945, label = "Lehman College, CUNY", icon = college_icon) %>%
+        addMarkers(lat = 40.8774, lng = -73.8794, label = "The Museum of Bronx History", icon = museum_icon) %>%
+        addMarkers(lat = 40.8295, lng = -73.9262, label = "Yankee Stadium", icon = stadium_icon) %>%
+        addMarkers(lat = 40.7563, lng = -73.9240, label = "Museum of the Moving Image", icon = museum_icon) %>%
+        addMarkers(lat = 40.7767, lng = -73.8739, label = "LaGuardia Airport", icon = airport_icon) %>%
+        addMarkers(lat = 40.7438, lng = -73.9351, label = "LaGuardia Community College", icon = college_icon) %>%
+        addMarkers(lat = 40.6467, lng = -74.0765, label = "The Staten Island September 11th Memorial", icon = monument_icon) %>%
+        addMarkers(lat = 40.6454, lng = -74.0822, label = "Curtis High School", icon = college_icon) %>%
+        addMarkers(lat = 40.6436, lng = -74.0719, label = "Staten Island Ferry", icon = ferry_icon) %>%
+        addMarkers(lat = 40.7022, lng = -73.9958, label = "Brooklyn Bridge Park", icon = park_icon) %>%
+        addMarkers(lat = 40.6711, lng = -73.9637, label = "Brooklyn Museum", icon = museum_icon) %>%
+        addMarkers(lat = 40.6913, lng = -73.9752, label = "Fort Greene Park", icon = park_icon)
+    )
+  
+  base_map
+}
+
+```
+
+
+```{r}
+
+plot_map(df, zoom = 10, ratio = 0.05, showMarkers = F)
+
+```
+
+## Manhattan
+
+```{r}
+
+manhattan <- df %>%
+  filter(neighbourhood_group == "Manhattan")
+
+plot_map(manhattan, 11.5, ratio = 0.02, showMarkers = T)
+
+```
+
+## Bronx
+
+```{r}
+
+bronx <- df %>%
+  filter(neighbourhood_group == "Bronx")
+
+plot_map(bronx, 11.5, ratio = 0.01, showMarkers = T)
+
+```
+
+## Queens
+
+```{r}
+
+queens <- df %>%
+  filter(neighbourhood_group == "Queens")
+
+plot_map(queens, 12, ratio = 0.02, showMarkers = T)
+
+```
+
+```{r}
+
+staten_island <- df %>%
+  filter(neighbourhood_group == "Staten Island")
+
+plot_map(staten_island, 12, ratio = 0.05, showMarkers = T)
+
+```
+
+## Brooklyn
+
+```{r}
+
+brooklyn <- df %>%
+  filter(neighbourhood_group == "Brooklyn")
+
+plot_map(brooklyn, 12, ratio = 0.02, showMarkers = T)
+
+```
+
+# Geographic distribution of room types
+
+```{r}
+
+plot_cluster_map <- function(df, zoom) {
+  center_lng <- (df %>% summarize(mean(longitude)))[1, 1]
+  center_lat <- (df %>% summarize(mean(latitude)))[1, 1]
+    
+  df %>%
+    leaflet() %>%
+    addTiles() %>%
+    addProviderTiles(providers$OpenStreetMap.DE) %>%
+    setView(center_lng, center_lat, zoom) %>%
+    addMarkers(lng = ~longitude, lat = ~latitude, clusterOptions = markerClusterOptions(), label = ~name)
+}
+
+```
+
+```{r}
+
+plot_room_type_map <- function(df, zoom) {
+  center_lng <- (df %>% summarize(mean(longitude)))[1, 1]
+  center_lat <- (df %>% summarize(mean(latitude)))[1, 1]
+    
+  df %>%
+    leaflet() %>%
+    addTiles() %>%
+    addProviderTiles(providers$OpenStreetMap.DE) %>%
+    setView(center_lng, center_lat, zoom) %>%
+    addMarkers(
+      lng = ~longitude, 
+      lat = ~latitude, 
+      icon = ~room_type_icons[room_type], 
+      label = ~name,
+      popup = ~paste(sep = "<br/>",
+        paste("<b>", name, "</b>"),
+        paste("Price: ", price, "$"),
+        paste("#Reviews: ", number_of_reviews),
+        paste("Review age: ", last_review_age, "days"),
+        paste("Availability: ", availability_365, "days")
+      )
+    )
+}
+
+```
+
+```{r}
+
+highest_review <- df %>%
+  arrange(desc(number_of_reviews)) %>%
+  head(100)
+  
+plot_room_type_map(
+  highest_review, 
+  11
+)
+
+```
+
+```{r}
+
+plot_room_type_map(df %>% filter(price_bin == "0-50") %>% arrange(desc(number_of_reviews)) %>% head(500), 11)
+
+```
+
+
+```{r}
+
+plot_room_type_map(df %>% filter(price_bin == "1001+", number_of_reviews != 0) %>% arrange(last_review_age) %>% head(500), 11)
+
+```
+
+
+```{r}
+
+plot_room_type_map(df %>% arrange(desc(number_of_reviews)) %>% head(10), 11)
+
+```
+
+```{r}
+
+plot_room_type_map(df %>% arrange(availability_365) %>% head(200), 11)
+
+```
+
+
+## Private room
+
+```{r}
+
+private_room <- df %>%
+  filter(room_type == "Private room")
+
+plot_cluster_map(private_room, 10)
+
+```
+
+## Entire home
+
+```{r}
+
+entire_home <- df %>%
+  filter(room_type == "Entire home/apt")
+
+plot_cluster_map(entire_home, 10)
+
+```
+
+## Shared room
+
+```{r}
+
+shared_room <- df %>%
+  filter(room_type == "Shared room")
+
+plot_cluster_map(shared_room, 10)
+
+```
+
+
+
+# Most expensive listing position
+
+```{r}
+
+plot_marker_map <- function(df, zoom, color) {
+  center_lng <- (most_expensive %>% summarize(mean(longitude)))[1, 1]
+  center_lat <- (most_expensive %>% summarize(mean(latitude)))[1, 1]
+
+  df %>%
+    leaflet() %>%
+    addTiles() %>%
+    addProviderTiles(providers$OpenStreetMap.DE) %>%
+    setView(center_lng, center_lat, zoom) %>%
+    addCircleMarkers(lng = ~longitude, lat= ~latitude, label = ~name, color = color)
+}
+
+```
+
+# Cheapest listings position
+
+```{r}
+
+most_expensive <- df %>%
+  arrange(desc(price)) %>%
+  head(10)
+
+plot_marker_map(most_expensive, 11, "red")
+
+```
+
+```{r}
+
+least_expensive <- df %>%
+  arrange(price) %>%
+  head(10)
+
+plot_marker_map(least_expensive, 11, "blue")
+
+```

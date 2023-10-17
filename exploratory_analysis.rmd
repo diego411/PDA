@@ -18,6 +18,13 @@ library( leaflet )
 library( leaflet.extras )
 library( scales )
 library( stargazer )
+library( GGally )
+library( corrplot )
+library( tm )
+library( wordcloud )
+library( broom )
+library( Hmisc )
+library( geosphere )
 
 ```
 
@@ -290,6 +297,17 @@ wordcloud(words=dm$word, freq=dm$freq, min.freq=1, max.words=150, random.order=F
 
 ```
 
+Clean up workspace
+
+```{r}
+
+rm(m)
+rm(dm)
+rm(tdm)
+rm(text)
+
+```
+
 # Earnings analysis
 
 ## Data Exploration
@@ -385,9 +403,10 @@ quantile_indicator <- ifelse(df$lowest_monthly_earnings > q9, "upper 10%", "lowe
 df <- cbind(df, quantile_indicator)
 
 # 
+
 earningsplot_df <- df %>%
   group_by(quantile_indicator) %>%
-  summarize(
+  summarise(
     tot_earnings_mio = (sum(lowest_monthly_earnings)/1000000)
   )
 
@@ -412,7 +431,7 @@ The upper 10% of listings earn almost 150% of the lower 90%.
 
 earningsplot_hood_room <- df %>%
   group_by(neighbourhood_group, room_type) %>%
-  summarize(
+  summarise(
     tot_earnings_mio = (sum(lowest_monthly_earnings)/1000000),
   )
 
@@ -445,6 +464,194 @@ df %>%
 
 
 # Geographic analysis
+
+## Distances
+
+First we want to observe the correlation between price per night and the distance to the biggest airport jfk.
+```{r}
+
+plot(df$distance_to_jfk, df$price)
+
+```
+Since their are a few outliers in price, we can either use the variable log_price or use the 99pct quartil of the variable price. 
+Furthermore there seem to be listings > 30km away from jfk. Those will be removed as well.
+```{r}
+
+price_pct99 <- quantile(df$price, probs = 0.99)
+
+#create new dataframe where outliers are removed
+df_2 <- df %>% filter(price < price_pct99) %>% filter(distance_to_jfk < 30)
+
+```
+
+```{r}
+
+plot(df_2$distance_to_jfk, df_2$price)
+
+```
+Now we want to proceed with a linear regression.
+```{r}
+lin_model_jfk <- lm(price ~ distance_to_jfk, data = df_2)
+summary(lin_model_jfk)
+
+plot(df_2$distance_to_jfk, df_2$price, xlab = "Distance to JFK (in kilometers)", ylab = "Price per night (in $)", main = "Regression anaylsis (distance to JFK vs price per night)")
+abline(lin_model_jfk, col = "red")
+```
+A significant correlation between distance to JFK and price per night (ppn) can be observed. The ppn increases around 7$ with every kilometer distance, c.p.. This result is intuitve since apartments around the airport i.e. airport hotels are always cheaper. Furthermore apartments nearer to the airport could be less expensive due to external factors like the noise of planes. 
+In further discussions can be observed, if the outliers > 30km away from JFK could have a negative impact on the price, i.e. these apartments are to far away from center points of NY.
+
+Now we conclued with the same anaylsis, but for all three airports.
+```{r}
+lin_model_airports <- lm(price ~ distance_to_jfk + distance_to_ewr + distance_to_lga, data = df_2)
+summary(lin_model_airports)
+```
+Lets check for correlation between the price and the distance to NY sights.
+```{r}
+lin_model_sights <- lm(price ~ distance_to_esb + distance_to_sol + distance_to_cp, data = df_2)
+summary(lin_model_sights)
+```
+The impact of sights is always significant. The estimate for esb is negative which is intuitve, because in the surounding area the rent is high, which leads to higher ppn in the listed airbnbs. Moving away from the center has therefore negative impact on prices. 
+
+Check, if we can increase quality of model with adding variables.
+```{r}
+#lin_model2 <- lm(price ~ distance_to_jfk + neighbourhood_group + room_type + number_of_reviews, data = df_reduced2)
+#summary(lin_model2)
+
+
+#plot(df_reduced$distance_to_jfk, df_reduced$price, xlab = "Distance to #JFK (in meters)", ylab = "Price per night (in $)", main = "Regression #anaylsis (df_reduced)")
+#abline(lin_model, col = "red")
+```
+
+Lets investigate if other focal points can express similar results.
+
+```{r}
+
+plot(df$distance_to_ewr, df$price)
+
+```
+For completeness: Do same with LGA Airport
+
+```{r}
+
+plot(df$distance_to_lga, df$price)
+
+```
+
+Not only airports can be focal points, sights might be also from interest. Therefore we look for the coordinates of statue of liberty, central park, empire state building.
+
+```{r}
+price_pct99 <- quantile(df$price, probs = 0.99)
+df_reduced2 <- df %>% filter(price < price_pct99)
+
+plot(df_reduced2$distance_to_sol, df_reduced2$price)
+```
+```{r}
+
+lin_model3 <- lm(price ~ distance_to_sol, data = df_reduced2)
+summary(lin_model3)
+
+
+plot(df_reduced2$distance_to_sol, df_reduced2$price, xlab = "Distance to statue of liberty (in meters)", ylab = "Price per night (in $)", main = "Regression anaylsis (df_reduced2)")
+abline(lin_model3, col = "red")
+
+```
+
+```{r}
+
+price_pct99 <- quantile(df$price, probs = 0.99)
+df_reduced2 <- df %>% filter(price < price_pct99)
+
+plot(df_reduced2$distance_to_esb, df_reduced2$price)
+
+```
+
+```{r}
+lin_model4 <- lm(price ~ distance_to_esb, data = df_reduced2)
+summary(lin_model4)
+
+
+plot(df_reduced2$distance_to_esb, df_reduced2$price, xlab = "Distance to empire state bulding (in kilometers)", ylab = "Price per night (in $)", main = "Regression anaylsis (df_reduced2)")
+abline(lin_model3, col = "red")
+```
+
+```{r}
+lin_model5 <- lm(price ~ distance_to_cp, data = df_reduced2)
+summary(lin_model5)
+
+
+plot(df_reduced2$distance_to_cp, df_reduced2$price, xlab = "Distance to central park (in kilometers)", ylab = "Price per night (in $)", main = "Regression anaylsis (df_reduced2)")
+abline(lin_model5, col = "red")
+```
+
+```{r}
+df_reduced2$sq_distance_to_esb <- df_reduced2$distance_to_esb^2
+
+sq_model5 <- lm(price ~ distance_to_esb + sq_distance_to_esb, data = df_reduced2)
+summary(sq_model5)
+```
+```{r}
+values <- seq(0, 25, 0.1)
+
+pred <- predict(sq_model5, list(distance_to_esb = values, sq_distance_to_esb = values^2))
+
+plot(df_reduced2$distance_to_esb, df_reduced2$price, xlab = "Distance to esb (in kilometers)", ylab = "Price per night (in $)", main = "Regression anaylsis (df_reduced2)")
+lines(values, pred, col = "blue")
+
+```
+```{r}
+df_reduced2$sq_distance_to_esb <- df_reduced2$distance_to_esb^2
+df_reduced2$poly_distance_to_esb <- df_reduced2$distance_to_esb^3
+
+poly_model5 <- lm(price ~ distance_to_esb + sq_distance_to_esb + poly_distance_to_esb, data = df_reduced2)
+summary(poly_model5)
+
+values <- seq(0, 25, 0.1)
+
+pred <- predict(poly_model5, list(distance_to_esb = values, sq_distance_to_esb = values^2, poly_distance_to_esb = values^3))
+
+plot(df_reduced2$distance_to_esb, df_reduced2$price, xlab = "Distance to esb (in kilometers)", ylab = "Price per night (in $)", main = "Regression anaylsis (df_reduced2)")
+lines(values, pred, col = "blue")
+
+```
+
+Now, use all calculated distances to sights to make a regression with on price.
+```{r}
+lin_model6 <- lm(price ~ distance_to_esb + distance_to_sol + distance_to_cp + neighbourhood_group, data = df_reduced2)
+summary(lin_model6)
+
+
+#plot(df_reduced2$distance_to_cp, df_reduced2$price, xlab = "Distance #to central park (in kilometers)", ylab = "Price per night (in $)", #main = "Regression anaylsis (df_reduced2)")
+#abline(lin_model5, col = "green")
+```
+```{r}
+bins <- c(0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 500)
+labels <- c("0-5", "6-10", "11-15", "16-20", "21-25", "26-30", "31-35", "36-40", "41-45", "46-50", ">50")
+
+df$distance_esb_bin <- cut(df$distance_to_esb, breaks = bins, labels = labels, include.lowest = TRUE, right = FALSE)
+
+df_reduced2$distance_esb_bin <- cut(df_reduced2$distance_to_esb, breaks = bins, labels = labels, include.lowest = TRUE, right = FALSE)
+
+
+
+table(df$distance_esb_bin)
+table(df_reduced2$distance_esb_bin)
+
+```
+```{r}
+df %>%
+  group_by(distance_esb_bin) %>%
+  summarise(mean = mean(price))
+```
+```{r}
+ggplot(df_reduced2, aes(x=distance_esb_bin, y=price)) + 
+  geom_boxplot()+
+  stat_summary(fun.y=mean, geom="point", 
+               shape=20, size=4, color="red", fill="red")
+```
+
+
+
+## Neighbourhood group distribution
 
 ```{r}
 

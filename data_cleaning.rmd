@@ -10,6 +10,8 @@ Load required packages.
 library( tidyverse )
 library( dplyr )
 library( gridExtra )
+library( ggmap )
+library( geosphere )
 
 ```
 
@@ -258,15 +260,72 @@ latest_review <- df %>%
   summarise(max(last_review))
 latest_review <- latest_review[1,]
 
+df <- df %>%
+  mutate(
+    last_review_age = latest_review - last_review,
+  )
+
+head(df)
+
 ```
 
-## Distance from center
+## Price bin
 
-Create a variable that contains the distance to the "center" of New York in Manhattan, here defined as the Columbus Circle.
+Bin price and check the distribution across bins.
 
 ```{r}
-center_latitude <- 40.767811385445356
-center_longitude <- -73.98156481716236
+
+bins <- c(0, 50, 100, 200, 500, 1000, 10000)
+labels <- c("0-50", "51-100", "101-200", "201-500", "501-1000", "1001+")
+df <- df %>%
+  mutate(price_bin = cut(price, breaks = bins, labels = labels, include.lowest = TRUE, right = FALSE))
+
+df %>%
+  count(price_bin) %>%
+  ggplot(aes(x = price_bin, y = n)) +
+  geom_col() +
+  labs(title="Distribution of Price Bins", x="Price Bins", y="Frequency")
+
+```
+
+The listings are distributed across the bins, though there is less data for the two highest price categories.
+Most listings are in bins 2 and 3, i.e., between $51 and $500. The adjacent bins 1 and 4 are also well-represented.
+
+## Name length
+
+Create a variable that counts the characters in a name.
+
+```{r}
+
+df <- df %>%
+  mutate(name_length = nchar(name))
+
+```
+
+## Earnings
+
+Create variable indicating listings average monthly earnings
+
+Note that we assume that every visitor leaves a review as a reputation system
+incentivizes users to do so. Note also, that we are only able to calculate
+the lowest potential earnings as we have only insight into the minimum number
+of nights visitors need to stay.
+
+```{r}
+
+df <- df %>%
+  mutate(lowest_monthly_earnings = minimum_nights*reviews_per_month*price)
+
+```
+
+## Distances
+
+```{r}
+
+distance <- function(lat1, long1, lat2, long2) {
+  dist <- distGeo(matrix(c(lat1, long1), ncol = 2), matrix(c(lat2, long2), ncol = 2))
+  return(dist/1000)
+}
 
 manhatten_distance <- function(x1, y1, x2, y2) {
   return(abs(x1 - x2) + abs(y1 - y2))  
@@ -274,19 +333,97 @@ manhatten_distance <- function(x1, y1, x2, y2) {
 
 ```
 
-Create a variable that indicates the time passed since the last review. Another variable reflects the distance from the Columbus Circle in Manhattan.
-Add both to the dataframe.
+### Distance to center of Manhattan
+
+Create a variable that contains the distance to the "center" of New York in Manhattan, here defined as the Columbus Circle.
+
+```{r}
+
+center_latitude <- 40.767811385445356
+center_longitude <- -73.98156481716236
+
+```
 
 ```{r}
 
 df <- df %>%
   mutate(
-    last_review_age = latest_review - last_review,
-    distance_from_center = manhatten_distance(center_latitude, center_longitude, latitude, longitude)  
+    distance_from_center = manhatten_distance(center_latitude, center_longitude, latitude, longitude)
   )
 
 head(df)
 
+```
+
+### Distance to airports
+
+Build variables with latitude and longitude of several focal points.
+We use the three international airports of NY, 3 sigths (Empire State Building, Statue of Liberty, Central Park) and the five centers of every neighbourhood.
+
+```{r}
+
+jfk <- c(latitude = 40.6413, longitude = -73.7781) # Airport jfk
+ewr <- c(latitude = 40.6895314, longitude = -74.17446239) # Airport Newark
+lga <- c(latitude = 40.7769271, longitude = -73.8739659) # Airport laGuardia
+
+```
+
+Calculate distances between listing and focal point.
+
+```{r}
+
+df <- df %>%
+  mutate(
+    distance_to_jfk = distance(latitude, longitude, jfk[1], jfk[2]),
+    distance_to_ewr = distance(latitude, longitude, ewr[1], ewr[2]),
+    distance_to_lga = distance(latitude, longitude, lga[1], lga[2])
+  )
+
+```
+
+### Distance to tourist attractions
+
+```{r}
+
+esb <- c(latitude = 40.748817, longitude = -73.985428) # empire state bulding
+sol <- c(latitude = 40.689247, longitude = -74.044502) # statue of liberty
+cp  <- c(latitude = 40.785091, longitude = -73.968285) # central park
+
+```
+
+```{r}
+
+df <- df %>%
+  mutate(
+    distance_to_esb = distance(latitude, longitude, esb[1], esb[2]),
+    distance_to_sol = distance(latitude, longitude, sol[1], sol[2]),
+    distance_to_cp = distance(latitude, longitude, cp[1], cp[2])
+  )
+
+```
+
+### Distance to neighbourhood centers
+
+```{r}
+
+c_mh <- c(latitude = 40.776676, longitude = -73.971321) # center Manhattan
+c_br <- c(latitude = 40.650002, longitude = -73.949997) # center Brooklyn
+c_si <- c(latitude = 40.579021, longitude = -74.151535) # center Staten Island
+c_bx <- c(latitude = 40.837048, longitude = -73.865433) # center Bronx
+c_qu <- c(latitude = 40.734470, longitude = -73.869720) # center Queens
+
+```
+
+```{r}
+
+df <- df %>%
+  mutate(
+    distance_to_c_mh = distance(latitude, longitude, c_mh[1], c_mh[2]),
+    distance_to_c_br = distance(latitude, longitude, c_br[1], c_br[2]),
+    distance_to_c_bx = distance(latitude, longitude, c_bx[1], c_bx[2]),
+    distance_to_c_qu = distance(latitude, longitude, c_qu[1], c_qu[2]),
+    distance_to_c_si = distance(latitude, longitude, c_si[1], c_si[2])
+  )
 ```
 
 ## Log variables
@@ -337,56 +474,6 @@ Save the modified data to the dataframe.
 ```{r}
 
 df <- df_log
-
-```
-
-
-## Price bin
-
-Bin price and check the distribution across bins.
-
-```{r}
-
-bins <- c(0, 50, 100, 200, 500, 1000, 10000)
-labels <- c("0-50", "51-100", "101-200", "201-500", "501-1000", "1001+")
-df <- df %>%
-  mutate(price_bin = cut(price, breaks = bins, labels = labels, include.lowest = TRUE, right = FALSE))
-
-df %>%
-  count(price_bin) %>%
-  ggplot(aes(x = price_bin, y = n)) +
-  geom_col() +
-  labs(title="Distribution of Price Bins", x="Price Bins", y="Frequency")
-
-```
-
-The listings are distributed across the bins, though there is less data for the two highest price categories.
-Most listings are in bins 2 and 3, i.e., between $51 and $500. The adjacent bins 1 and 4 are also well-represented.
-
-## Name length
-
-Create a variable that counts the characters in a name.
-
-```{r}
-
-df <- df %>%
-  mutate(name_length = nchar(name))
-
-```
-
-## Earnings
-
-Create variable indicating listings average monthly earnings
-
-Note that we assume that every visitor leaves a review as a reputation system
-incentivizes users to do so. Note also, that we are only able to calculate
-the lowest potential earnings as we have only insight into the minimum number
-of nights visitors need to stay.
-
-```{r}
-
-df <- df %>%
-  mutate(lowest_monthly_earnings = minimum_nights*reviews_per_month*price)
 
 ```
 

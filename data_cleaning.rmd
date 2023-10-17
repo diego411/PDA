@@ -20,7 +20,7 @@ Set up workspace, i.e., remove all existing data from working memory and load da
 ```{r setup}
 
 rm( list=ls() )
-df <- read.csv("C:/Users/Luisa/OneDrive/!Master Social Research/23W/Programming for Data Analytics/R/Airbnb/airbnb_data.csv")
+df <- read.csv("./data/airbnb_data.csv")
 
 ```
 
@@ -184,15 +184,31 @@ df <- df_log
 Bin price and check the distribution across bins.
 
 ```{r}
+
 bins <- c(0, 50, 100, 200, 500, 1000, 10000)
 labels <- c("0-50", "51-100", "101-200", "201-500", "501-1000", "1001+")
-df$price_bin <- cut(df$price, breaks = bins, labels = labels, include.lowest = TRUE, right = FALSE)
-table(df$price_bin)
-barplot(table(df$price_bin), main="Distribution of Price Bins", xlab="Price Bins", ylab="Frequency")
+df <- df %>%
+  mutate(price_bin = cut(price, breaks = bins, labels = labels, include.lowest = TRUE, right = FALSE))
+
+df %>%
+  count(price_bin) %>%
+  ggplot(aes(x = price_bin, y = n)) +
+  geom_col() +
+  labs(title="Distribution of Price Bins", x="Price Bins", y="Frequency")
+
 ```
+
 The listings are distributed across the bins, though there is less data for the two highest price categories.
 Most listings are in bins 2 and 3, i.e., between $51 and $500. The adjacent bins 1 and 4 are also well-represented.
 
+Create a variable that counts the characters in a name.
+
+```{r}
+
+df <- df %>%
+  mutate(name_length = nchar(name))
+
+```
 
 
 # Consistency
@@ -215,25 +231,53 @@ summary(df_numeric)
 
 All numeric variables (except longitude) have non-negative values. Max for availability_365 is 365.
 
+
+## Price
+
 Price: Minimum value of 0, likely indicating missing data rather than actual free listings.
 Minimum Nights: A maximum of 1250 nights suggests potential outliers.
 
 Check entries with price equal to 0.
 
 ```{r}
-df[df$price == 0, ]
+
+df %>%
+  filter(price == 0)
+
 ```
 
-All but one listing have a non-zero number of reviews, which suggests they are legitimate listings.
-All but one listing have non-null values for reviews_per_month, indicating recent activity.
-Most listings have availability days (availability_365 > 0), indicating that they can be booked.
-
-Replace $0 listings with NA assuming they represent missing data and exclude one implausible listing.
+Since there are only 11 listings with a price of zero, we assume this is a data gathering error and remove the respective rows.
 
 ```{r}
 
-df$price[df$price == 0] <- NA
-df <- df[!(df$price == 0 & df$id == 20933849), ]
+df <- df_non_zero_price <- df %>% 
+  filter(price != 0)
+
+```
+
+## Minimum nights
+
+```{r}
+
+max(df$minimum_nights)
+
+```
+
+The maximum for the variable minimum_nights is 1250, meaning that particular listing would have to be rented as a minimum for well over 3 years. This seems excessive as AirBnB in most cases is used for holidays or short to mid stays. We do not see a reason for a host to require the listing to be rented for such a long time and thus will consider it and similar entries as data anomalies.
+
+
+```{r}
+
+quantile(df$minimum_nights, 0.9999)
+
+```
+
+The minimum required nights is less than 500 for 99.99% of all listing. This number seems more or less reasonable. In the following we will therefore remove all entries that fall above this threshold.
+
+```{r}
+
+df <- df %>%
+  filter(minimum_nights <= quantile(minimum_nights, 0.9999))
 
 ```
 
@@ -291,30 +335,60 @@ Find duplicates based on the id column and identify listings that are at the exa
 
 ```{r}
 
-duplicates_by_id <- df[duplicated(df$id), 1]
-duplicates_by_id  
-
-duplicates_by_host_id_and_name <- df[duplicated(df$latitude, df$longitude), ]
-duplicates_by_host_id_and_name
-?duplicated
-
-df[!(duplicated(df[c("longitude","latitude")]) | duplicated(df[c("longitude","latitude")], fromLast = TRUE)), ] %>%
-  select(latitude, longitude)
-
-df %>%
-  distinct(longitude, latitude, .keep_all = TRUE)
-
-df %>%
-  distinct(round(longitude, 8), round(latitude, 8), .keep_all = TRUE) %>%
-  select(longitude, latitude)
-
-str(df)
-
-df %>%
-  filter(latitude == 40.75362	)#, longitude == -73.97237	)
-
-View(df)
+get_duplicates_by_columns <- function(df, column_names) {
+  column_indexes <- unlist(lapply(column_names, function(name) {
+    return (grep(name, colnames(df)))
+  })) 
+  
+  return (df[duplicated(df[,column_indexes]) | duplicated(df[,column_indexes], fromLast = TRUE),])
+}
 
 ```
 
-Listings in the same location could be apartments in the same building complex.
+## Duplicate ids
+
+```{r}
+
+nrow(get_duplicates_by_columns(df, c("id")))
+
+```
+## Duplicate names
+
+```{r}
+
+get_duplicates_by_columns(df, c("name")) %>%
+  select(id, name, host_name, neighbourhood, price) %>%
+  arrange(desc(name))
+
+```
+There are a lot of duplicate names in the dataset. Most of the time these listings seem to be from the same host. However, the listings seem to always differ in the neighbourhood or in the price. This will be further analysed in the following.
+
+```{r}
+
+get_duplicates_by_columns(df, c("name", "latitude", "longitude")) %>%
+  select(id, name, host_name, price, latitude, longitude) %>%
+  arrange(desc(name))
+
+```
+
+As one can see there are no listings with the same name that are also at the same geographic position. Since the combination of name, latitude and longitude is already a super key differentiating every row, no furher supersets of this combination need to be analysed.
+
+## Duplicate positions
+
+```{r}
+
+get_duplicates_by_columns(df, c("longitude", "latitude")) %>%
+  select(id, name, host_name, longitude, latitude) %>%
+  arrange(desc(latitude))
+
+```
+There are some listings that are at the exact same position. However, they more often than not have a different host or name and in every case a different price. Thus, we will not drop these entries and consider them in our analysis.
+
+# Export
+
+```{r}
+
+write.csv(df, "./data/airbnb_clean.csv")
+
+```
+

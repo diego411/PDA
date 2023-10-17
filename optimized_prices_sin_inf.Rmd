@@ -341,6 +341,7 @@ stargazer(m_reviews_on_avail, type = "text")
 
 
 ```{r}
+# Idee: price history
 
 df <- airbnb_df %>%
   mutate(year = format(last_review, "%Y"))
@@ -349,6 +350,19 @@ year_summary <- df %>%
   group_by(year) %>%
   summarize(mean_price = mean(price), count = n())
 year_summary
+
+
+# Idee: 3d plot location
+plot_ly(airbnb_df, x = ~longitude, y = ~latitude, z = ~lowest_monthly_earnings, type = "scatter3d") %>%
+  layout(
+    scene = list(
+      aspectmode = "cube",  # Set the aspect mode to "cube"
+      xaxis = list(title = "Longitude"),
+      yaxis = list(title = "Latitude"),
+      zaxis = list(title = "Earnings")
+    ),
+    title = "3D Plot of Listings Earnings"
+  )
 
 ```
 

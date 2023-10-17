@@ -22,7 +22,7 @@ setup workspace: clear memory, load data (already cleaned, see data_cleaning.rmd
 ```{r setup}
 
 rm(list = ls())
-airbnb_df <- read_csv("airbnb_clean.csv")
+airbnb_df <- read_csv("./data/airbnb_clean.csv")
 
 ```
 

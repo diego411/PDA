@@ -12,10 +12,10 @@ Load required packages.
 library( tidyverse )
 library( dplyr )
 library( gridExtra )
+library( ggridges )
 library( mapview )
 library( leaflet )
 library( leaflet.extras )
-
 
 ```
 
@@ -90,16 +90,47 @@ df %>%
 
 # Geographic analysis
 
-
 ```{r}
 
 neighbourhood_group_counts <- df %>%
   count(neighbourhood_group)
 
-ggplot(neighbourhood_group_counts, aes(x = "", y = n, fill = neighbourhood_group)) +
-  geom_bar(stat = "identity", width = 1) +
-  coord_polar("y", start = 0) +
-  theme_void() #+
+population_df <- data.frame(
+  neighbourhood_group = c("Manhattan", "Brooklyn", "Queens", "Staten Island", "Bronx"),
+  population = c(1600000, 2500000, 2271000, 475000, 1427000)
+)
+
+area_df <- data.frame(
+  neighbourhood_group = c("Manhattan", "Brooklyn", "Queens", "Staten Island", "Bronx"),
+  area = c(59, 180, 280, 152, 110)
+)
+
+listing_count_pie_chart <- ggplot(neighbourhood_group_counts, aes(x = "", y = n, fill = neighbourhood_group)) +
+    geom_bar(stat = "identity", width = 1) +
+    coord_polar("y", start = 0) +
+    ggtitle("Number of listings per neighbourhood group") +
+    theme_void()
+
+population_pie_chart <- ggplot(population_df, aes(x = "", y = population, fill = neighbourhood_group)) +
+    geom_bar(stat = "identity", width = 1) +
+    coord_polar("y", start = 0) +
+    ggtitle("Population per neighbourhood groups") +
+    theme_void()
+
+area_pie_chart <- ggplot(area_df, aes(x = "", y = area, fill = neighbourhood_group)) +
+    geom_bar(stat = "identity", width = 1) +
+    coord_polar("y", start = 0) +
+    ggtitle("Area per neighbourhood groups") +
+    theme_void()
+
+plots <- list(
+  listing_count_pie_chart,
+  population_pie_chart,
+  area_pie_chart
+)
+
+grid.arrange(grobs = plots, padding = 2, ncol = 2)
+
 ```
 
 ```{r}
@@ -121,48 +152,10 @@ ggplot(df, mapping = aes(y = log_price, x = neighbourhood_group)) +
 
 ```{r}
 
-#df %>%
-#  filter(log_price >= 0) %>% 
-#  ggplot(mapping = aes(x = log_price, y = neighbourhood_group)) +
-#  geom_density_ridges(alpha = 0.5)
-
-```
-
-```{r}
-
-#df %>%
-#  ggplot(mapping = aes(x = distance_from_center, y = neighbourhood_group)) +
-#  geom_density_ridges(alpha = 0.5)
-
-```
-
-```{r}
-
 df %>%
-  ggplot(mapping = aes(x = room_type, y = distance_from_center)) +
-  geom_boxplot()
-
-```
-
-```{r}
-
-df %>%
-  ggplot(mapping = aes(x = longitude, y = latitude, color = room_type)) +
-  geom_point()
-
-```
-
-```{r}
-
-plots <- lapply(unique(df$room_type), function(r_type) {
-  print(r_type)
-  df %>%
-    filter(room_type == r_type) %>%
-    ggplot(mapping = aes(x = longitude, y = latitude)) +
-    geom_point() +
-    ggtitle(r_type)
-})
-grid.arrange(grobs = plots, ncol = 3)
+  filter(log_price >= 0) %>% 
+  ggplot(mapping = aes(x = log_price, y = neighbourhood_group)) +
+  geom_density_ridges(alpha = 0.5)
 
 ```
 
@@ -177,25 +170,20 @@ get_most_expensive_neighbourhoods_in_group <- function(group) {
     summarize(sum_price = sum(price)) %>%
     arrange(desc(sum_price))
   
-  tmp_df <- df %>%
-      filter(neighbourhood_group == group) %>%
-      group_by(neighbourhood, room_type) %>%
-      summarise(sum_price = sum(price)) %>%
-      arrange(match(neighbourhood, most_expensive_neighbourhoods$neighbourhood)) %>%
-      mutate(neighbourhood = as.factor(neighbourhood)) %>%
-      head(20)
-
-  ?reorder
-  return(
-    tmp_df %>%
-      ggplot(mapping = aes(x = factor(neighbourhood, level = most_expensive_neighbourhoods$neighbourhood), y = sum_price, fill = room_type)) +
-      geom_col(stat = "identity") +
-      labs(
-        title = paste("Most expensive neighbourhoods in", group),
-        x = "Neighbourhood",
-        y = "Price in $"
-      )
-  )
+  df %>%
+    filter(neighbourhood_group == group) %>%
+    group_by(neighbourhood, room_type) %>%
+    summarise(sum_price = sum(price)) %>%
+    arrange(match(neighbourhood, most_expensive_neighbourhoods$neighbourhood)) %>%
+    mutate(neighbourhood = as.factor(neighbourhood)) %>%
+    head(20) %>%
+    ggplot(mapping = aes(x = factor(neighbourhood, level = most_expensive_neighbourhoods$neighbourhood), y = sum_price, fill = room_type)) +
+    geom_col(stat = "identity") +
+    labs(
+      title = paste("Most expensive neighbourhoods in", group),
+      x = "Neighbourhood",
+      y = "Price in $"
+    )
 }
 
 ```
@@ -312,15 +300,15 @@ ferry_icon <- makeIcon(
 )
 
 room_type_icons <- iconList(
-  private_room = makeIcon(
+  "Private room" = makeIcon(
     iconUrl = paste(icon_base_url, "BBsnsTkuoCkC"),
     iconWidth = icon_width, iconHeight = icon_height
   ),
-  entire_home = makeIcon(
+  "Entire home/apt" = makeIcon(
     iconUrl = paste(icon_base_url, "Uc54oOGCsjOE"),
     iconWidth = icon_width, iconHeight = icon_height
   ),
-  shared_room = makeIcon(
+  "Shared room" = makeIcon(
     iconUrl = paste(icon_base_url, "46791"),
     iconWidth = icon_width, iconHeight = icon_height
   )
@@ -460,10 +448,9 @@ plot_cluster_map <- function(df, zoom) {
 
 ```
 
-
 ```{r}
 
-test_map <- function(df, zoom) {
+plot_room_type_map <- function(df, zoom) {
   center_lng <- (df %>% summarize(mean(longitude)))[1, 1]
   center_lat <- (df %>% summarize(mean(latitude)))[1, 1]
     
@@ -472,11 +459,64 @@ test_map <- function(df, zoom) {
     addTiles() %>%
     addProviderTiles(providers$OpenStreetMap.DE) %>%
     setView(center_lng, center_lat, zoom) %>%
-    addMarkers(lng = ~longitude, lat = ~latitude, icon = ~room_type_icons[room_type])
+    addMarkers(
+      lng = ~longitude, 
+      lat = ~latitude, 
+      icon = ~room_type_icons[room_type], 
+      label = ~paste(
+        paste("Name: ", name), 
+        paste("Price: ", price),
+        paste("No. reviews: ", number_of_reviews),
+        paste("Review age: ", last_review_age)
+      )
+    )
 }
 
+```
 
-test_map(manhattan, 11)
+```{r}
+
+highest_review <- df %>%
+  arrange(desc(number_of_reviews)) %>%
+  head(500)
+  
+plot_room_type_map(
+  highest_review, 
+  11
+)
+
+```
+
+```{r}
+
+plot_room_type_map(df %>% filter(price_bin == "0-50") %>% arrange(desc(number_of_reviews)) %>% head(500), 11)
+
+```
+
+```{r}
+
+unique(df$price_bin)
+df %>% filter(number_of_reviews != 0)
+
+```
+
+
+```{r}
+
+plot_room_type_map(df %>% filter(price_bin == "1001+", number_of_reviews != 0) %>% arrange(last_review_age) %>% head(500), 11)
+
+```
+
+
+```{r}
+
+plot_room_type_map(df %>% arrange(desc(number_of_reviews)) %>% head(10), 11)
+
+```
+
+```{r}
+
+plot_room_type_map(df %>% arrange(availability_365) %>% head(200), 11)
 
 ```
 
@@ -549,91 +589,5 @@ least_expensive <- df %>%
   head(10)
 
 plot_marker_map(least_expensive, 11, "blue")
-
-```
-
-```{r}
-
-get_hull <- function(group) {
-  df_points <- df %>%
-    filter(neighbourhood_group == group) %>%
-    select(longitude, latitude, neighbourhood_group)
-
-  return(df_points[chull(df_points),])
-}
-
-manhattan_hull <- get_hull("Manhattan")
-queens_hull <- get_hull("Queens")
-bronx_hull <- get_hull("Bronx")
-staten_island_hull <- get_hull("Staten Island")
-brooklyn_hull <- get_hull("Brooklyn")
-
-base_map <- df %>%
-  ggplot(mapping = aes(x = longitude, y = latitude)) +
-  geom_polygon(data = manhattan_hull, aes(x = longitude, y = latitude), fill = NA, color = "black") +
-  geom_polygon(data = queens_hull, aes(x = longitude, y = latitude), fill = NA, color = "black") +
-  geom_polygon(data = bronx_hull, aes(x = longitude, y = latitude), fill = NA, color = "black") +
-  geom_polygon(data = staten_island_hull, aes(x = longitude, y = latitude), fill = NA, color = "black") +
-  geom_polygon(data = brooklyn_hull, aes(x = longitude, y = latitude), fill = NA, color = "black")
-
-```
-
-```{r}
-
-base_map +
-  geom_bin2d(bins = 500) +
-  stat_density2d(
-    aes(fill = ..level.., alpha = ..level..), 
-    geom = "polygon"
-  ) +
-  scale_fill_gradient(low = "green", high = "red") +
-  labs(title = "Distribution of Listings") +
-  theme_minimal()
-
-```
-
-```{r}
-
-df %>%
-  filter(neighbourhood_group == "Manhattan") %>%
-  ggplot(mapping = aes(x = longitude, y = latitude)) +
-  geom_polygon(data = manhattan_hull, aes(x = longitude, y = latitude), fill = NA, color = "black") +
-  geom_bin2d(bins = 600) +
-  stat_density2d(
-    aes(fill = ..level.., alpha = ..level..), 
-    geom = "polygon"
-  ) +
-  scale_fill_gradient(low = "green", high = "red") +
-  labs(title = "Listing Density in Manhattan") +
-  theme_minimal()
-  
-```
-
-
-```{r}
-
-df %>%
-  ggplot(mapping = aes(x = longitude, y = latitude)) +
-  geom_bin2d(bins = 200) +
-  stat_density2d(
-    aes(fill = ..level.., alpha = ..level..), 
-    geom = "polygon"
-  ) +
-  lims(x = c(-74.1, -73.8)) +
-  scale_fill_gradient(low = "green", high = "red") +
-  labs(title = "Distribution of Listings") +
-  theme_minimal()
-
-```
-
-```{r}
-
-df %>%
-  filter(neighbourhood_group == "Manhattan") %>%
-  ggplot(mapping = aes(x = longitude, y = latitude)) +
-  geom_bin2d(bins = 200) +
-  scale_fill_gradient(low = "blue", high = "red") +
-  labs(title = "Heatmap of Points") +
-  theme_minimal()
 
 ```

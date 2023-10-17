@@ -165,6 +165,8 @@ summary(model_language)
 HELP: What does this mean: In other words, there is evidence to suggest that the "is_english" variable is associated with the numeric variable.
 
 
+---------- Bis hier ist (fast) alles ready -----------
+
 #EXPLORING WHAT IS WRITTEN IN NAME
 
 Now we look at what was written in the name of a listing instead of just the "look". 

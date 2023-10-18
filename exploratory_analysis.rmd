@@ -435,11 +435,11 @@ df <- df %>%
 
 ## Earnings
 
-Create variable indicating listings average monthly earnings
+Create variable indicating listing's average monthly earnings
 
-Note that we assume that every visitor leaves a review as a reputation system
-incentivizes users to do so. Note also, that we are only able to calculate
-the lowest potential earnings as we have only insight into the minimum number
+Note that we assume that every visitor leaves a review as Airbnb's reputation system
+incentivizes users to do so. Note also, that we can only calculate
+the lowest potential earnings as we only know the minimum number
 of nights visitors need to stay.
 
 ```{r}
@@ -1471,38 +1471,67 @@ df %>%
 
 ```
 
-As the distribution is extremely skewed to the right, we will conduct a log-transformation
+As the distribution is extremely skewed to the right (median is 124.7, while range is 202783.7), we conduct a log-transformation.
+
 
 ```{r}
 
-# log-transform earnings + filter out infinite values
+# log-transform earnings
 df <- df %>%
-  mutate(log_earnings = log(lowest_monthly_earnings)) %>%
-  filter(is.finite(log_earnings), is.finite(log_price), is.finite(log_reviews_per_month))
+  mutate(log_earnings = log(lowest_monthly_earnings))
 
+# check for infinite values and how they correlate to original earnings variable
+inf_earnings <- df %>%
+  filter(is.infinite(log_earnings)) %>%
+  select(log_earnings, lowest_monthly_earnings)
+
+summary(inf_earnings$lowest_monthly_earnings)
+
+inf_earnings %>%
+  summarise(mean_earnings = mean(lowest_monthly_earnings),
+            count = n())
+
+
+```
+
+After log-transformation, 10029 observations have been assigned infinite values.
+This is, because their lowest monthly earnings are 0.
+To further investigate the earnings distribution, we exclude these listings.
+
+```{r}
+
+# filter out observations with 0 earnings
+earnings_df <- df %>%
+  filter(lowest_monthly_earnings > 0)
+
+```
+
+We calculate basic and additional summary statistics to display the distribution in a meaningful way.
+
+```{r}
 # store summary statistics of earnings distribution
-# upper whisker
-IQR <- IQR(df$log_earnings)
-calc_upper_whisker <- (quantile(df$log_earnings, probs = 0.75) + IQR*1.5)
-select_upper_whisker <- df$log_earnings >= calc_upper_whisker
-upper_whisker <- df$log_earnings[select_upper_whisker]
+# estimate upper whisker
+IQR <- IQR(earnings_df$log_earnings)
+calc_upper_whisker <- (quantile(earnings_df$log_earnings, probs = 0.75) + IQR*1.5)
+select_upper_whisker <- earnings_df$log_earnings >= calc_upper_whisker
+upper_whisker <- earnings_df$log_earnings[select_upper_whisker]
 upper_whisker <- min(upper_whisker)
 
-# lower whisker
-calc_lower_whisker <- (quantile(df$log_earnings, probs = 0.25) - IQR*1.5)
-select_lower_whisker <- df$log_earnings <= calc_lower_whisker
-lower_whisker <- df$log_earnings[select_lower_whisker]
+# estimate lower whisker
+calc_lower_whisker <- (quantile(earnings_df$log_earnings, probs = 0.25) - IQR*1.5)
+select_lower_whisker <- earnings_df$log_earnings <= calc_lower_whisker
+lower_whisker <- earnings_df$log_earnings[select_lower_whisker]
 lower_whisker <- max(lower_whisker)
 
-# upper and lower quartile and median
+# upper and lower quantile and median
 earnings_distribution <- c(
-  min(df$log_earnings), 
-  quantile(df$log_earnings, probs = c(0.25, 0.5, 0.75)),
-  max(df$log_earnings)
+  min(earnings_df$log_earnings), 
+  quantile(earnings_df$log_earnings, probs = c(0.25, 0.5, 0.75)),
+  max(earnings_df$log_earnings)
 )
 
 #draw histogram
-df %>%
+earnings_df %>%
   ggplot(aes(x = log_earnings)) +
   geom_histogram() +
   labs(title="Earnings Distribution") +
@@ -1510,12 +1539,12 @@ df %>%
   ylab("Frequency") 
 
 # draw boxplot showing delogged values
-df %>%
+earnings_df %>%
   ggplot(aes(y = log_earnings)) +
   geom_boxplot() +
   stat_boxplot(geom = "errorbar") +
   scale_y_continuous(breaks = c(earnings_distribution, lower_whisker, upper_whisker), 
-                     labels = as.integer(exp((c(earnings_distribution, lower_whisker, upper_whisker))))) +
+                     labels = as.integer(exp(c(earnings_distribution, lower_whisker, upper_whisker)))) +
   scale_x_continuous(breaks = NULL, labels = NULL) +
   labs(
     y = "Lowerst Monthly Earnings (De-Logged)",
@@ -1523,36 +1552,67 @@ df %>%
   )
 
 # violin plot by neighbourhood groups
-df %>%
+earnings_df %>%
   ggplot(aes(x = reorder(neighbourhood_group, +lowest_monthly_earnings), y = log_earnings)) +
   geom_violin(draw_quantiles = c(0.25, 0.5, 0.75), trim = TRUE) +
   labs(
-    title = "Earnings Distribution by Earnings",
-    x = ""
+    title = "Monthly Earnings Distribution by Neighbourhood Group",
+    y = "Logged Lowest Monthly Earnings",
+    x = NULL
   )
 
 
 ```
 
-The lowest monthly earnings are approximately normally distributed.
-50% of listings have earned up to 225 per month. 75% of listings have earned up to 612 per month.
-There is much more variance in monthly earnings in the upper 25% of the distribution.
-As seen in the original boxplot, some outliers have extremely high earnings.
+The histogram shows that the distribution of monthly earnings is approximately normally distributed. We continue to see, however, that more listings belong to the lower half of the distribution.
 
+50% of listings earned up to 225 per month. 75% of listings earned up to 612 per month.
+The Interquantile-Range corresponds to 550. Particularly, the middle half of the distribution earned between 62 and 612 per month.
+There is much more variance in monthly earnings in the upper 25% of the distribution.
+Excluding outliers, the range between the weakest and strongest earning listing in the upper 25% of the distribution is 18738.
+As seen in the original boxplot, some outliers have extremely high earnings, with the maximal earning per month being 202783.
+Considering providing an Airbnb listing a form of income, the highest percentiles of the distribution seem to account for a very high inequality in earnings. 
+
+The violin plots convey, that there is less variance in monthly earnings in the Bronx and Staten Island and that Brooklyn and Manhattan account for the abovementioned outliers.
+
+We will now calculate the lowest monthly earnings of NYC as a whole.
 
 ```{r}
-# create vector inidicating position in earnings distribution
-q9 <- quantile(df$lowest_monthly_earnings, probs = 0.9)
-quantile_indicator <- ifelse(df$lowest_monthly_earnings > q9, "upper 10%", "lower 90%")
-df <- cbind(df, quantile_indicator)
 
-# 
+# sort data based on earnings
+sorted_earnings <- earnings_df[order(earnings_df$lowest_monthly_earnings), ]
 
-earningsplot_df <- df %>%
+# Calculate cumulative earnings
+sorted_earnings$cumulative_earnings <- cumsum(sorted_earnings$lowest_monthly_earnings)
+
+# view NYC's monthly earnings
+cumulated_earnings <- max(sorted_earnings$cumulative_earnings)
+cumulated_earnings
+
+```
+
+Cumulating the lowest monthly earnings of Airbnbs in New York since 2011, the whole city earns at least 25.793.569 per month.
+
+Taking the identified skewness as a point of departure, we will investigate the shares, the parts of the distribution have on this sum.
+
+```{r}
+
+# cut total monthly earnings in half
+cumulated_earnings_0.5 <- cumulated_earnings / 2
+cumulated_earnings_0.5
+
+# identify percentile at which cumulated monthly earnings are equal
+q_earnings_halfcut <- ecdf(sorted_earnings$cumulative_earnings)(cumulated_earnings_0.5)
+
+# create vector indicating position in earnings distribution
+q_value_halfcut <- quantile(sorted_earnings$lowest_monthly_earnings, probs = q_earnings_halfcut)
+quantile_indicator <- ifelse(sorted_earnings$lowest_monthly_earnings > q_value_halfcut , "upper 4%", "lower 96%")
+sorted_earnings <- cbind(sorted_earnings, quantile_indicator)
+
+# prepare data for plotting
+earningsplot_df <- sorted_earnings %>%
   group_by(quantile_indicator) %>%
-  summarise(
-    tot_earnings_mio = (sum(lowest_monthly_earnings)/1000000)
-  )
+  summarise(tot_earnings_mio = (sum(lowest_monthly_earnings)/1000000))
 
 earningsplot_df %>%
   ggplot(aes(quantile_indicator, tot_earnings_mio)) +
@@ -1560,15 +1620,15 @@ earningsplot_df %>%
   geom_text(aes(label = sprintf("%.2f", earningsplot_df$tot_earnings_mio)), vjust = -0.5, size = 3) +
   scale_y_continuous(breaks = seq(0, max(earningsplot_df$tot_earnings_mio), by = 3)) +
   labs(
-    title = "Total Earnings of upper 10% and lower 90% of Distribution",
-    y = "Lowest Monthley Earnings in Mio",
+    title = "Cumulated Earnings of upper 4% and lower 96% of Monthly Earnings Distribution",
+    y = "Cumulated Lowest Monthley Earnings in Mio",
     x = NULL
   )
-ggsave("tot_earn_by_distribution.pdf")
+# ggsave("tot_earn_by_distribution.pdf")
 
 ```
 
-The upper 10% of listings earn almost 150% of the lower 90%.
+The highest 4% in the earnings distribution earn as much as the 96% below them.
 
 ```{r}
 # examine how much each neighbourhood group earns and the share of room types for each

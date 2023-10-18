@@ -1,0 +1,280 @@
+# Intro R
+
+```{r}
+
+library(ggplot2)
+library(GGally)
+library(corrplot)
+library(tm)
+library(wordcloud)
+library(stargazer)
+library(broom)
+
+```
+
+```{r setup}
+
+rm( list=ls() )
+df <- read.csv(".data/airbnb_clean.csv")
+
+```
+
+
+# Correlation matrix
+
+To get an overview of the data, explore correlations between variables.
+
+```{r}
+# Correlation table with p-values
+correlation_data <- df[, c("price", "minimum_nights", "number_of_reviews", 
+                           "reviews_per_month", "name_length",
+                           "calculated_host_listings_count", "availability_365")]
+
+result <- rcorr(as.matrix(correlation_data))
+result$r  # correlation matrix
+result$P  # p-values
+
+# Calculate the correlation matrix
+cor_matrix <- cor(correlation_data, use = "complete.obs")
+
+# Visualize the correlation matrix using corrplot
+corrplot(cor_matrix, method = "color", type = "upper", 
+         title = "Correlation Matrix", mar = c(0,0,1,0))
+
+```
+All correlations are significant except name_length correlated with minimum_nights and number_of_reviews.
+
+Price:
+Exhibits only weak correlations. The slight negative association with number_of_reviews (-0.048) could signal that affordability may marginally boost popularity. Minimal positive correlations are seen with name_length (0.042) and calculated_host_listings_count (0.057), pointing toward  influences on pricing through strategic naming or a host's experience. There is also a small positive link with availability_365 (0.082).
+
+Minimum Nights:
+An inverse relationship is noted with number_of_reviews (-0.082) and reviews_per_month (-0.123). This could be due to these apartments having less turnover or being less popular to rent. Positive relationships with availability_365 (0.146) and calculated_host_listings_count (0.131).
+
+Number of Reviews:
+The positive correlation with availability_365 (0.172) implies that properties with higher availability tend to garner more reviews. A subtle positive relationship with name_length (0.087), indicating greater popularity of these apartments.
+
+Name Length:
+The positive correlation with calculated_host_listings_count (0.152) could indicate that more experienced hosts might employ more detailed names for their listings.
+
+Host Listings Count:
+The positive association with availability_365 (0.226) proposes that hosts with a higher listing count tend to offer listings with higher availability. They may be less likely to use their apartments privately, thereby being able to offer them for rent more frequently.
+
+
+Examine correlations divided by neighborhood.
+
+```{r}
+unique_groups <- unique(df$neighbourhood_group)
+
+for (group in unique_groups) {
+  
+  subset_df <- df[df$neighbourhood_group == group,]
+  
+  # Subset the data to include only relevant numeric variables
+  correlation_data <- subset_df[, c("price", "minimum_nights", "number_of_reviews", 
+                                    "reviews_per_month", "name_length",
+                                    "calculated_host_listings_count", "availability_365")]
+
+  # Calculate the correlation matrix for the subset
+  cor_matrix <- cor(correlation_data, use = "complete.obs")
+  
+  # Visualize the correlation matrix using corrplot
+  corrplot(cor_matrix, method = "color", type = "upper", 
+           title = paste("Correlation Matrix for", group), mar = c(0,0,1,0))
+}
+
+```
+
+Price:
+Notably negative correlation with number_of_reviews especially in Manhattan and Staten Island; positive correlation with name_length only in Manhattan. A nuanced relationship with calculated_host_listings_count across neighborhoods; consistent slight positive with availability, strongest in Manhattan.
+    
+Minimum Nights:
+Uniformly negative correlation with number_of_reviews and reviews_per_month; positive with availability across regions. Generally maintains a positive relationship with calculated_host_listings_count, barring Staten Island.
+
+Number of Reviews:
+A consistent positive correlation between number_of_reviews and availability is observed across all neighborhood groups, reaffirming that heightened availability may foster increased reviews. A mild negative correlation with calculated_host_listings_count persists generally, with Staten Island being an exception.
+
+Name Length:
+The positive correlation between name_length and calculated_host_listings_count is generally upheld, albeit with Brooklyn diverging from this trend, suggesting variations in naming strategies among hosts with multiple listings.
+
+Calculated Host Listings Count:
+A consistent positive relationship with availability across all neighborhoods indicates that hosts with multiple listings might offer increased availability across their properties.
+
+Notably, Manhattan and Staten Island occasionally diverge from a general trend.
+
+
+# Number of listings by area
+
+```{r}
+
+ggplot(df, aes(x=longitude, y=latitude)) + 
+  geom_density_2d_filled(show.legend = TRUE, aes(fill = ..level..)) + 
+  coord_cartesian(xlim = c(-74.08, -73.85), ylim = c(40.64, 40.86)) + 
+  labs(title="Density Heatmap of Listings", x="Longitude", y="Latitude") + 
+  theme_minimal()
+
+# Bar plot to see which neighborhood groups have the most listings:
+
+df %>% 
+  filter(!is.na(neighbourhood_group)) %>% 
+  ggplot(aes(x = neighbourhood_group)) + 
+  geom_bar() + 
+  labs(
+    title = "Listings by Neighbourhood Group", 
+    x = "Neighbourhood Group", 
+    y = "Frequency"
+  )
+
+```
+
+Most listings in the dataset are in Manhattan and Brooklyn.
+
+
+# Room types
+```{r}
+# Distribution of Room Type
+df %>% 
+  filter(!is.na(neighbourhood_group)) %>% 
+  ggplot(aes(x=room_type)) + 
+  geom_bar() + 
+  labs(title="Distribution of Room Types", x="Room Type", y="Frequency")
+
+# Room Types by Location
+df %>% 
+  filter(!is.na(neighbourhood_group)) %>% 
+  ggplot(aes(x=neighbourhood_group, fill=room_type)) + 
+  geom_bar(position="dodge") +
+  labs(title="Distribution of Room Types by Neighbourhood Group", 
+       x="Neighborhood", y="Frequency")
+
+# Geographic distribution of private room vs. apartment
+df %>% 
+  filter(room_type %in% c('Private room', 'Entire home/apt')) %>% 
+  ggplot(aes(x = longitude, y = latitude, color = room_type)) + 
+  geom_point() + 
+  scale_color_manual(values = c("Private room" = "blue", "Entire home/apt" = "red")) +
+  labs(title = "Geographic Distribution of 'Private Room' vs. 'Entire home/apt'",
+       x = "Longitude", 
+       y = "Latitude",
+       color = "Room Type")
+
+# Price by Room Type
+df %>%
+  filter(!is.na(log_price) & !is.na(room_type)) %>%
+  ggplot(aes(x = room_type, y = log_price)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Price vs. Room Type",
+       x = "Room Type",
+       y = "Log Price")
+
+#Price bins by Room Type
+ggplot(df, aes(x=price_bin, fill=room_type)) +
+  geom_bar(position="dodge") +   # Use "stack" for a stacked bar plot
+  labs(title="Price Bins per Room Type", 
+       x="Price Bins", 
+       y="Count")
+
+```
+Only few listing are for a shared room.
+
+In Manhattan, most listings are for an entire home/apartment, while in other neighborhoods, private rooms dominate. Brooklyn stands out as a balanced neighborhood with almost equal representation of both types.
+
+Listings for an entire home/apt tend to be more expensive, followed by private and shared rooms.
+
+
+# Price and Location
+
+```{r}
+df %>% 
+  filter(!is.na(price_bin)) %>% 
+  ggplot(aes(x=price_bin)) +
+    geom_bar() +
+    labs(title="Distribution of Price Bins", x="Price Bins", y="Frequency") +
+    facet_wrap(~neighbourhood_group, scales = "free_y")
+
+# Boxplot: Price vs. Neighbourhood Group
+df %>%
+  filter(!is.na(log_price) & !is.na(neighbourhood_group)) %>%
+  ggplot(aes(x = neighbourhood_group, y = log_price)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Price vs. Neighbourhood Group",
+       x = "Neighbourhood Group",
+       y = "Log Price")
+
+# Geographic distribution of price bins
+df %>% 
+  filter(!is.na(price_bin)) %>% 
+  ggplot(aes(x=longitude, y=latitude, color=price_bin)) +
+    geom_point(alpha=0.5) +
+    scale_color_brewer(palette="Set2") +
+    labs(title="Geographic Distribution of Price Bins",
+         x="Longitude",
+         y="Latitude")
+
+# Geographic distribution of log_price
+ggplot(df, aes(x=longitude, y=latitude)) + 
+  geom_point(aes(color=log_price), alpha=0.5) +
+  scale_color_viridis_c(option = "viridis") +
+  labs(title="Heatmap of Prices", x="Longitude", y="Latitude")
+
+```
+In the Manhattan area, the majority of listings are priced between $101-200, followed by listings in the $201-500 range. Notably, there are very few listings in the $0-50 price range compared to the other neighborhood groups. Queens predominantly features listings in the $51-100 price range, complemented by a significant number of listings priced between $0-50. Brooklyn has both a lot of 101-200 and 51-100 listings. Note the different scales on the y axis.
+
+Manhattan appears to have the highest median log price among the five neighbourhood groups. It also has the most variability in log prices. Manhattan and Brooklyn also have several outliers, indicating some extremely high-priced listings. Brooklyn and Queens seem to have roughly similar median log prices, though Brooklyn's is slightly higher. Bronx and Staten Island have the lowest median log prices.
+
+Manhattan and Brooklyn seem to be slightly right-skewed, as the whisker on the upper side is longer than the one on the lower side. Bronx, Queens, and Staten Island are more symmetric, as their boxes and whiskers are relatively evenly spread around the median.
+
+The area further to the southwest displays a higher concentration of listings in the $0-50 range. Listings with a price range of $501-1000 are sparsely distributed, with a majority found towards the south, east, and north regions.
+    
+In southern Manhattan, the predominant hue is green, indicating the steepest prices. Surrounding regions also reflect elevated pricing, demonstrating a gradient effect. As we traverse Brooklyn and Queens, the intensity of green diminishes but remains brighter proximate to Manhattan. Venturing further to the east, north, or south reveals a decline in the average price, signified by progressively more dark green/blue shades.
+
+Since the variation between neighborhoods is high, analyses should be performed separately or they may be confounded by neighborhood_group.
+
+## Distance from center
+```{r}
+cor_price_distance <- cor.test(df$log_price, df$distance_from_center, method = "pearson")
+print(paste("Correlation between log price and distance from center: ", cor_price_distance$estimate))
+
+# Scatter Plot: Price vs. Distance from Center
+ggplot(df, aes(x = distance_from_center, y = log_price)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  labs(title = "Scatter Plot of Price vs. Distance from Center",
+       x = "Distance from Center",
+       y = "Log Price")
+
+```
+
+The correlation coefficient of -0.4604 suggests a moderate negative relationship.
+
+
+# Word Cloud
+Which terms are used most often in descriptions?
+
+```{r}
+# Create a Corpus
+text <- Corpus(VectorSource(df$name))
+
+# Convert all characters to lowercase, remove punctuation and common English stopwords (e.g., "and", "the", "of")
+text <- tm_map(text, content_transformer(tolower))
+text <- tm_map(text, removePunctuation)
+text <- tm_map(text, removeWords, stopwords("en"))
+
+# Create a term-document matrix
+# Rows represent terms (words) and columns represent individual entries from df$name. The values in the matrix indicate the frequency of a term in a given document.
+tdm <- TermDocumentMatrix(text)
+
+# Calculate word frequencies, sorted in decreasing order
+m <- as.matrix(tdm)
+word_freqs <- sort(rowSums(m), decreasing=TRUE) 
+
+# Create a data frame with two columns: word (the terms or words) and freq (their respective frequencies)
+dm <- data.frame(word = names(word_freqs), freq = word_freqs)
+
+# Create a basic wordcloud
+wordcloud(words=dm$word, freq=dm$freq, min.freq=1, max.words=150, random.order=FALSE)
+
+```
+
+
+
+

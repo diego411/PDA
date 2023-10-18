@@ -16,6 +16,17 @@ library( ggridges )
 library( mapview )
 library( leaflet )
 library( leaflet.extras )
+library( scales )
+library( stargazer )
+library( GGally )
+library( corrplot )
+library( tm )
+library( wordcloud )
+library( broom )
+library( Hmisc )
+library( geosphere )
+require( gender )
+require( tidytext )
 
 ```
 
@@ -28,67 +39,1011 @@ df <- read.csv("./data/airbnb_clean.csv")
 
 ```
 
+# General analysis
 
-# Some general stuff
+## Correlation matrix
+
+To get an overview of the data, explore correlations between variables.
+
+```{r}
+# Correlation table with p-values
+correlation_data <- df[, c("price", "minimum_nights", "number_of_reviews", 
+                           "reviews_per_month", "name_length",
+                           "calculated_host_listings_count", "availability_365")]
+
+result <- rcorr(as.matrix(correlation_data))
+result$r  # correlation matrix
+result$P  # p-values
+
+# Calculate the correlation matrix
+cor_matrix <- cor(correlation_data, use = "complete.obs")
+
+# Visualize the correlation matrix using corrplot
+corrplot(cor_matrix, method = "color", type = "upper", 
+         title = "Correlation Matrix", mar = c(0,0,1,0))
+
+```
+All correlations are significant except name_length correlated with minimum_nights and number_of_reviews.
+
+Price:
+Exhibits only weak correlations. The slight negative association with number_of_reviews (-0.048) could signal that affordability may marginally boost popularity. Minimal positive correlations are seen with name_length (0.042) and calculated_host_listings_count (0.057), pointing toward  influences on pricing through strategic naming or a host's experience. There is also a small positive link with availability_365 (0.082).
+
+Minimum Nights:
+An inverse relationship is noted with number_of_reviews (-0.082) and reviews_per_month (-0.123). This could be due to these apartments having less turnover or being less popular to rent. Positive relationships with availability_365 (0.146) and calculated_host_listings_count (0.131).
+
+Number of Reviews:
+The positive correlation with availability_365 (0.172) implies that properties with higher availability tend to garner more reviews. A subtle positive relationship with name_length (0.087), indicating greater popularity of these apartments.
+
+Name Length:
+The positive correlation with calculated_host_listings_count (0.152) could indicate that more experienced hosts might employ more detailed names for their listings.
+
+Host Listings Count:
+The positive association with availability_365 (0.226) proposes that hosts with a higher listing count tend to offer listings with higher availability. They may be less likely to use their apartments privately, thereby being able to offer them for rent more frequently.
+
+
+Examine correlations divided by neighborhood.
+
+```{r}
+unique_groups <- unique(df$neighbourhood_group)
+
+for (group in unique_groups) {
+  
+  subset_df <- df[df$neighbourhood_group == group,]
+  
+  # Subset the data to include only relevant numeric variables
+  correlation_data <- subset_df[, c("price", "minimum_nights", "number_of_reviews", 
+                                    "reviews_per_month", "name_length",
+                                    "calculated_host_listings_count", "availability_365")]
+
+  # Calculate the correlation matrix for the subset
+  cor_matrix <- cor(correlation_data, use = "complete.obs")
+  
+  # Visualize the correlation matrix using corrplot
+  corrplot(cor_matrix, method = "color", type = "upper", 
+           title = paste("Correlation Matrix for", group), mar = c(0,0,1,0))
+}
+
+```
+
+Price:
+Notably negative correlation with number_of_reviews especially in Manhattan and Staten Island; positive correlation with name_length only in Manhattan. A nuanced relationship with calculated_host_listings_count across neighborhoods; consistent slight positive with availability, strongest in Manhattan.
+    
+Minimum Nights:
+Uniformly negative correlation with number_of_reviews and reviews_per_month; positive with availability across regions. Generally maintains a positive relationship with calculated_host_listings_count, barring Staten Island.
+
+Number of Reviews:
+A consistent positive correlation between number_of_reviews and availability is observed across all neighborhood groups, reaffirming that heightened availability may foster increased reviews. A mild negative correlation with calculated_host_listings_count persists generally, with Staten Island being an exception.
+
+Name Length:
+The positive correlation between name_length and calculated_host_listings_count is generally upheld, albeit with Brooklyn diverging from this trend, suggesting variations in naming strategies among hosts with multiple listings.
+
+Calculated Host Listings Count:
+A consistent positive relationship with availability across all neighborhoods indicates that hosts with multiple listings might offer increased availability across their properties.
+
+Notably, Manhattan and Staten Island occasionally diverge from a general trend.
+
+
+## Number of listings by area
 
 ```{r}
 
-room_type_counts <- df %>%
-  arrange(desc(room_type)) %>%
-  count(room_type)
+ggplot(df, aes(x=longitude, y=latitude)) + 
+  geom_density_2d_filled(show.legend = TRUE, aes(fill = ..level..)) + 
+  coord_cartesian(xlim = c(-74.08, -73.85), ylim = c(40.64, 40.86)) + 
+  labs(title="Density Heatmap of Listings", x="Longitude", y="Latitude") + 
+  theme_minimal()
 
-room_type_counts
+# Bar plot to see which neighborhood groups have the most listings:
 
-ggplot(room_type_counts, aes(x = "", y = n, fill = room_type)) +
-  geom_bar(stat = "identity", width = 1) +
-  coord_polar("y", start = 0) +
-  theme_void() #+
-  #theme(legend.position="none") +
-  #geom_text(aes(y = ypos, label = room_type), color = "white", size=6) +
-  #scale_fill_brewer(palette="Set1")
+df %>% 
+  filter(!is.na(neighbourhood_group)) %>% 
+  ggplot(aes(x = neighbourhood_group)) + 
+  geom_bar() + 
+  labs(
+    title = "Listings by Neighbourhood Group", 
+    x = "Neighbourhood Group", 
+    y = "Frequency"
+  )
+
+```
+
+Most listings in the dataset are in Manhattan and Brooklyn.
+
+
+## Room types
+
+```{r}
+# Distribution of Room Type
+df %>% 
+  filter(!is.na(neighbourhood_group)) %>% 
+  ggplot(aes(x=room_type)) + 
+  geom_bar() + 
+  labs(title="Distribution of Room Types", x="Room Type", y="Frequency")
+
+# Room Types by Location
+df %>% 
+  filter(!is.na(neighbourhood_group)) %>% 
+  ggplot(aes(x=neighbourhood_group, fill=room_type)) + 
+  geom_bar(position="dodge") +
+  labs(title="Distribution of Room Types by Neighbourhood Group", 
+       x="Neighborhood", y="Frequency")
+
+# Geographic distribution of private room vs. apartment
+df %>% 
+  filter(room_type %in% c('Private room', 'Entire home/apt')) %>% 
+  ggplot(aes(x = longitude, y = latitude, color = room_type)) + 
+  geom_point() + 
+  scale_color_manual(values = c("Private room" = "blue", "Entire home/apt" = "red")) +
+  labs(title = "Geographic Distribution of 'Private Room' vs. 'Entire home/apt'",
+       x = "Longitude", 
+       y = "Latitude",
+       color = "Room Type")
+
+# Price by Room Type
+df %>%
+  filter(!is.na(log_price) & !is.na(room_type)) %>%
+  ggplot(aes(x = room_type, y = log_price)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Price vs. Room Type",
+       x = "Room Type",
+       y = "Log Price")
+
+#Price bins by Room Type
+ggplot(df, aes(x=price_bin, fill=room_type)) +
+  geom_bar(position="dodge") +   # Use "stack" for a stacked bar plot
+  labs(title="Price Bins per Room Type", 
+       x="Price Bins", 
+       y="Count")
+
+```
+Only few listing are for a shared room.
+
+In Manhattan, most listings are for an entire home/apartment, while in other neighborhoods, private rooms dominate. Brooklyn stands out as a balanced neighborhood with almost equal representation of both types.
+
+Listings for an entire home/apt tend to be more expensive, followed by private and shared rooms.
+
+
+## Price and Location
+
+```{r}
+df %>% 
+  filter(!is.na(price_bin)) %>% 
+  ggplot(aes(x=price_bin)) +
+    geom_bar() +
+    labs(title="Distribution of Price Bins", x="Price Bins", y="Frequency") +
+    facet_wrap(~neighbourhood_group, scales = "free_y")
+
+# Boxplot: Price vs. Neighbourhood Group
+df %>%
+  filter(!is.na(log_price) & !is.na(neighbourhood_group)) %>%
+  ggplot(aes(x = neighbourhood_group, y = log_price)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Price vs. Neighbourhood Group",
+       x = "Neighbourhood Group",
+       y = "Log Price")
+
+# Geographic distribution of price bins
+df %>% 
+  filter(!is.na(price_bin)) %>% 
+  ggplot(aes(x=longitude, y=latitude, color=price_bin)) +
+    geom_point(alpha=0.5) +
+    scale_color_brewer(palette="Set2") +
+    labs(title="Geographic Distribution of Price Bins",
+         x="Longitude",
+         y="Latitude")
+
+# Geographic distribution of log_price
+ggplot(df, aes(x=longitude, y=latitude)) + 
+  geom_point(aes(color=log_price), alpha=0.5) +
+  scale_color_viridis_c(option = "viridis") +
+  labs(title="Heatmap of Prices", x="Longitude", y="Latitude")
+
+```
+In the Manhattan area, the majority of listings are priced between $101-200, followed by listings in the $201-500 range. Notably, there are very few listings in the $0-50 price range compared to the other neighborhood groups. Queens predominantly features listings in the $51-100 price range, complemented by a significant number of listings priced between $0-50. Brooklyn has both a lot of 101-200 and 51-100 listings. Note the different scales on the y axis.
+
+Manhattan appears to have the highest median log price among the five neighbourhood groups. It also has the most variability in log prices. Manhattan and Brooklyn also have several outliers, indicating some extremely high-priced listings. Brooklyn and Queens seem to have roughly similar median log prices, though Brooklyn's is slightly higher. Bronx and Staten Island have the lowest median log prices.
+
+Manhattan and Brooklyn seem to be slightly right-skewed, as the whisker on the upper side is longer than the one on the lower side. Bronx, Queens, and Staten Island are more symmetric, as their boxes and whiskers are relatively evenly spread around the median.
+
+The area further to the southwest displays a higher concentration of listings in the $0-50 range. Listings with a price range of $501-1000 are sparsely distributed, with a majority found towards the south, east, and north regions.
+    
+In southern Manhattan, the predominant hue is green, indicating the steepest prices. Surrounding regions also reflect elevated pricing, demonstrating a gradient effect. As we traverse Brooklyn and Queens, the intensity of green diminishes but remains brighter proximate to Manhattan. Venturing further to the east, north, or south reveals a decline in the average price, signified by progressively more dark green/blue shades.
+
+Since the variation between neighborhoods is high, analyses should be performed separately or they may be confounded by neighborhood_group.
+
+### Distance from center
+
+```{r}
+cor_price_distance <- cor.test(df$log_price, df$distance_from_center, method = "pearson")
+print(paste("Correlation between log price and distance from center: ", cor_price_distance$estimate))
+
+# Scatter Plot: Price vs. Distance from Center
+ggplot(df, aes(x = distance_from_center, y = log_price)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  labs(title = "Scatter Plot of Price vs. Distance from Center",
+       x = "Distance from Center",
+       y = "Log Price")
+
+```
+
+The correlation coefficient of -0.4604 suggests a moderate negative relationship.
+
+
+## Word Cloud
+
+Which terms are used most often in descriptions?
+
+```{r}
+# Create a Corpus
+text <- Corpus(VectorSource(df$name))
+
+# Convert all characters to lowercase, remove punctuation and common English stopwords (e.g., "and", "the", "of")
+text <- tm_map(text, content_transformer(tolower))
+text <- tm_map(text, removePunctuation)
+text <- tm_map(text, removeWords, stopwords("en"))
+
+# Create a term-document matrix
+# Rows represent terms (words) and columns represent individual entries from df$name. The values in the matrix indicate the frequency of a term in a given document.
+tdm <- TermDocumentMatrix(text)
+
+# Calculate word frequencies, sorted in decreasing order
+m <- as.matrix(tdm)
+word_freqs <- sort(rowSums(m), decreasing=TRUE) 
+
+# Create a data frame with two columns: word (the terms or words) and freq (their respective frequencies)
+dm <- data.frame(word = names(word_freqs), freq = word_freqs)
+
+# Create a basic wordcloud
+wordcloud(words=dm$word, freq=dm$freq, min.freq=1, max.words=150, random.order=FALSE)
+
+```
+
+Clean up workspace
+
+```{r}
+
+rm(m)
+rm(dm)
+rm(tdm)
+rm(text)
+
+```
+
+# Natural Language Processing
+
+```{r}
+
+model <- aov(df$number_of_reviews ~ df$name_category, data = df)
+summary(model)
+
+```
+HELP: KANN DAS JEMAND INTERPRETIEREN? ChatGPT sagt signifikant. 
+
+Now we look at a possible correlation between a listing's name length and the number of reviews a listing receives:
+
+```{r}
+
+model <- aov(df$number_of_reviews ~ df$is_upper_case, data = df)
+summary(model)
+
+```
+
+Let's see if there is any correlation between the number of reviews and the language of the listing:
+
+```{r}
+
+model_language <- aov(df$number_of_reviews ~ df$is_english, data = df)
+summary(model_language)
+
+```
+HELP: What does this mean: In other words, there is evidence to suggest that the "is_english" variable is associated with the numeric variable.
+
+## EXPLORING WHAT IS WRITTEN IN NAME
+
+Now we look at what was written in the name of a listing instead of just the "look". 
+
+
+Get the most common words used in the listing's names: 
+
+```{r}
+names <- df$name 
+per_line <- data.frame(id=df$id, text = df$name, stringsAsFactors = 
+                   FALSE)
+new <- per_line %>% unnest_tokens(word, text)
+words_per_line <- per_line %>% left_join(new, by = "id")
+words_per_line <- words_per_line %>% left_join(df, by = 'id') %>% dplyr::select('id', 'name', 'word')
+words_per_line
+
+```
+Create a word cloud with the top 100 most commonly used words in names:
+(Not very insightful)
+
+```{r}
+library(tm)
+library(wordcloud)
+new %>% count(word, sort = TRUE) %>% with(wordcloud(word, n, max.words = 100))
+```
+
+Create a word cloud with the top 100 most commonly used words in names after having removed stopwords:
+
+```{r}
+new <-  anti_join(new, get_stopwords())
+new %>% count(word, sort= TRUE) %>% with(wordcloud(word, n, max.words = 100))
+```
+Count the most commonly used positive words:
+
+```{r}
+#install.packages("textdata")
+library(textdata)
+positive <- get_sentiments("nrc") %>%
+  filter(sentiment == "positive")
+
+new %>%
+  semi_join(positive) %>%
+  count(word, sort = TRUE)
+```
+Count the most commonly used negative words: 
+
+```{r}
+negative <- get_sentiments("bing") %>%
+  filter(sentiment == "negative")
+
+new %>%
+  semi_join(negative) %>%
+  count(word, sort = TRUE)
+```
+Show the top 150 words by sentiment: 
+
+```{r}
+sentiments <- get_sentiments("nrc")
+
+
+library(wordcloud2)
+top_150 <- new %>% count(word, sort= TRUE) %>%
+  left_join(sentiments) %>% 
+  mutate(sentiment = ifelse(is.na(sentiment), "neutral", sentiment)) %>% 
+  mutate(color = ifelse(sentiment == "positive", "green", 
+                       ifelse(sentiment == "negative", "red", "grey"))) %>% slice(1:100) 
+
+
+
+wordcloud2(top_150, size=1, color=top_150$color)
+
+
 ```
 
 
-```{r}
+Get the "most positive" listings:
 
-ggplot(df, aes(x = last_review_age, y = price)) +
-  geom_point()
+```{r}
+total_name_sentiment <- words_per_line %>% left_join(sentiments) %>% mutate(sentiment = ifelse(is.na(sentiment),"neutral", sentiment)) %>% group_by(id) %>%summarise(sentiment_total = sum(sentiment =="positive")) %>% arrange(desc(sentiment_total))
+total_name_sentiment
+```
+See if correlation of positive listing with availability, number of reviews, reviews per motnh
+No 
+
+```{r}
+df <- left_join(df, total_name_sentiment, by="id")
+cor(df$sentiment_total, df$reviews_per_month)
+```
+
+## MULTIPLE HOSTINGS 
+
+Hat das schon jemand? -> Dann hier 
+
+By looking at the data, it seems that sometimes multiple hosts are behind one host_id. There are various ways to identify them. We assume that there is more than one host, if one of the following appears in a host name: "+" , "/", " and ", "&". To make sure we do not include names like "Andrea",  we search for " and " with leading and trailing spaces.
+
+```{r}
+#adds logical column that indicates whether name contains " and ", "+", "/" or "&" ; ignore.case makes sure that all variations of " and " are covered
+df$is_more_than_one_host <- grepl(" and |&|\\+|/", df$host_name, ignore.case = TRUE)
+#adds column that contains vector of all names if is_more_than_one_host is true (more than one host)
+df$host_names_all <- ifelse(df$is_more_than_one_host == TRUE, strsplit(df$host_name, "(?i) and |&| & |\\+| \\+ |/| / ", perl=TRUE), c(""))
+#count rows where this is the case
+nrow(df[df$host_names_all != '', ])
+```
+
+TODO: GROUP BY HOST ID TO GET NUMBER OF HOSTS WITH MORE THAN ONE 
+At least 1852 listings appear to have more than one host. This does not necessarily mean that the rest have only a single host. Considering that companies also list their accommodations on Airbnb, this probably rather represents the minimum. The presence of hosts associated with companies is not part of this analysis and needs further investigations. 
+
+Short look at how many distinct hosts this is: 
+
+```{r}
+df %>% filter(is_more_than_one_host == TRUE) %>% summarise(count = n_distinct(host_id))
+```
+There are 1229 distinct host_ids.
+
+## GENDER ANALYSIS
+
+Given the availability of host names, it might be insightful to look at the gender of the hosts and how the gender relates to other variables. 
+We will use the gender package (https://github.com/lmullen/gender) to assign a gender classification to each host name. 
+The package uses data from the Social Security Administration, the U.S. Census Bureau (via IPUMS USA), and the North Atlantic Population Project. 
+We are aware that this approach and therefore the results from this whole section can only be of limited significance and should only be taken as indicator that this might be something worth investigating.
+
+Before we do this, we need to split the values in the column that contains all names and create a row for each name:  
+
+```{r}
+#add a new column called "x", filter for all values in "host_names_all" where the list contains more than one value (meaning more than one host) and use unnest to make a separate row for each name in "host_names_all" then rename "host_names_all" to "host_names_splitted" and call "x" "host_name_all" instead
+df <- df %>% mutate(x = host_names_all) %>% filter(lengths(host_names_all) > 0) %>% 
+  unnest(host_names_all) %>% rename(host_names_splitted = host_names_all) %>% rename(host_names_all = x)
+#add names where empty to splitted column so the original is untouched
+df$host_names_splitted[!df$is_more_than_one_host] <- df$host_name[!df$is_more_than_one_host]
+#ensure df stays a data drame
+df <- as.data.frame(df)
+df
+```
+
+
+Now we can assign the sex/gender to each name, using the "gender" package mentioned above. We do this in chunks, to speed up the process. 
+
+```{r}
+chunksize <- 100 
+#two temporary variables 
+min <- 1
+max <- 100
+#create temporary dataframe
+gender <- data.frame()
+for(i in 1:ceiling(nrow(df)/chunksize)){
+  #check if max is higher than the number of rows in the dataframe to make sure slicing in next line works correctly
+  max <- ifelse(max>nrow(df), nrow(df), max)
+  #select next 100 rows
+  row_slice_100 <- df[min:max,]
+  #use gender function to assign gender
+  host_names_100_gender <- gender(row_slice_100$host_names_splitted, year=2010, method="ssa")
+  #rename the name column that was automatically created by the function gender to make sure it can be joined in the next line and remove duplicate columns
+  host_names_100_gender <- host_names_100_gender %>% rename(host_names_splitted = name) %>% distinct(host_names_splitted, .keep_all = TRUE)
+  #join the results from the use of the gender function with the slice of the data frame and drop columns that were automatically added by the function "gender" 
+  host_names_gender <- row_slice_100 %>% left_join(host_names_100_gender, by = "host_names_splitted") %>%  dplyr::select(-c(proportion_male, proportion_female, year_min, year_max))
+  
+  #add 100 to min and max to select next 100 rows in next iteration
+  min <- min+100
+  max <- max+100
+  #add rows to temporary df gender
+  gender <- rbind(gender, host_names_gender)
+}
+#assign gender to df and make sure it is a data frame
+df <- as.data.frame(gender)
+
+#remove all temporary used variables and the temporary data frame
+rm(gender, min, max, chunksize, i, row_slice_100, host_names_100_gender, host_names_gender)
+
+df$gender <- as.factor(df$gender)
+```
+
+Let's see if there are hosts with even more than two names by counting all the names associated with a listing id:
+
+```{r}
+df <- df %>%
+  group_by(id) %>%
+  mutate(host_count = n()) %>%
+  as.data.frame()
+
+max(df$host_count)
 
 ```
 
-```{r}
+There seems to be a few listings with more than even two hosts. Looking at the data there is one with 4 hosts and one with 3. 
 
-ggplot(df, aes(x = availability_365, y = price)) +
-  geom_point()
+
+We now take a closer look at the "combined" hosts. We only want to assign one gender per host_id, so that we have the same number of rows as in the original dataset. This means we want to categorize into three categories: male, female, mixed.
+
+```{r}
+# create temporary data frame and filter for rows where there is more than one host and then group by host_id and check if gender values are the same and assign the right value
+result_df <- df %>%
+  filter(is_more_than_one_host == TRUE) %>%
+  group_by(host_id) %>%
+  summarise(result = if (length(unique(gender)) == 1) unique(gender) else "mixed")
+
+# Merge the result back into the original data frame
+df <- left_join(df, result_df, by = "host_id")
+df <- df %>%
+  mutate(gender = case_when(
+    !is.na(result) ~ result,
+    TRUE ~ gender  # Keep the original value when the condition is not met
+  )) %>% dplyr::select(-c(host_names_splitted, result)) %>% distinct(.keep_all =  TRUE)
+
+rm(result_df)
+```
+
+
+We will now take a look at the gender distribution of the listings in our dataset. Note that hosts can appear more than once. 
+
+```{r}
+#counts by gender
+gender_counts <- df %>%
+  group_by(gender) %>%
+  summarise(count = n())
+
+#sum of all entries
+total_count <- sum(gender_counts$count)
+
+# Creates a pie chart
+ggplot(gender_counts, aes(x = "", y = count, fill = gender)) +
+  geom_bar(stat = "identity") +
+  coord_polar("y") +
+  labs(title = "Gender Distribution") +
+  theme_void() + 
+  geom_text(aes(label = paste0(gender, "\n", count, " (", scales::percent(count / total_count), ")")), 
+            position = position_stack(vjust = 0.5))
+
+#remove help variables and dfs 
+rm(gender_counts, total_count)
+```
+We can see a slight overrepresentation of female names, but with 20% of the names remaining unidentified this has only limited significance.Next, we will investigate these unidentified names.
+Another interesting insight is that most hosts that are more than one person seem to be mixed. Remember 1852 from above and now we see 1516 hosts of mixed gender. 
+
+---------- Bis hier ist alles ready ------------
+
+
+
+Investigate N/A values. We do 
+TODO: Wordcloud
+
+```{r}
+host_names_no_gender <- df %>% filter(is.na(gender))
+#host_names_no_gender <- df %>% distinct(host_name_splitted) TODO: @Milena host_name_splitted exisitert nicht 
+host_names_no_gender
+#host_count <- df%>% count(host_name_splitted, sort = TRUE)
+#host_count
+```
+
+
+
+Remove N/A values: 
+
+```{r}
+host_names_gender <- df %>% filter(!is.na(gender)) # TODO: @Milena ist das richtig so?
+
+gender_counts <- host_names_gender %>%
+  group_by(gender) %>%
+  summarise(count = n())
+
+total_count <- sum(gender_counts$count)
+
+# Create a pie chart
+ggplot(gender_counts, aes(x = "", y = count, fill = gender)) +
+  geom_bar(stat = "identity") +
+  coord_polar("y") +
+  labs(title = "Gender Distribution") +
+  theme_void() + 
+  geom_text(aes(label = paste0(gender, "\n", count, " (", scales::percent(count / total_count), ")")), 
+            position = position_stack(vjust = 0.5))
+```
+
+number of listings male vs female:
+
+```{r}
 
 ```
 
-```{r}
+more than one listing male vs female:
 
-ggplot(df, mapping = aes(y = log_price, x = room_type)) +
-  geom_boxplot()
+```{r}
+more_than_one_listing <- host_names_gender %>% group_by(host_id) %>%summarise(total_listing = sum(n())) 
+unique_listing_counts <- more_than_one_listing %>%
+  distinct(host_id, total_listing)
+merged_data <- host_names_gender %>% left_join(unique_listing_counts, by="host_id") %>% filter(total_listing > 1) %>% distinct(host_id, host_name, gender, total_listing)
+merged_data
+```
+
+
+male vs female neighbourhoods:
+```{r}
+#df_counts <- df_counts %>% # TODO: @Milena df_counts existiert nicht und wenn ich es mit df ersetzt funktioniert es nicht
+#  group_by(neighbourhood_group) %>%
+#  mutate(percentage = count / sum(count) * 100)
+
+# Create the stacked bar chart
+#p <- ggplot(df_counts, aes(x = neighbourhood_group, y = percentage, fill = gender)) +
+#  geom_bar(stat = "identity") +
+#  labs(
+#    title = "Listings by Neighborhood and Gender",
+#    x = "Neighborhood",
+#    y = "Percentage"
+#  )
+
+# Annotate the bars with percentages adding up to 100%
+#p + geom_text(aes(label = scales::percent(percentage / 100)), position = position_stack(vjust = 0.5))
+```
+
+Boxplot number of reviews by gender:
+TODO: Add a pyramid chart (wie oft demographics in einem Land dargestellt werden)
+
+```{r}
+ggplot(host_names_gender, aes(x = gender, y = number_of_reviews)) +
+  geom_boxplot() +
+  labs(
+    title = "Number of Reviews by Gender",
+    x = "Gender",
+    y = "Number of Reviews"
+  )
+
+ggplot(host_names_gender, aes(x = gender, y = number_of_reviews)) +
+  geom_violin() +
+  labs(
+    title = "Number of Reviews by Gender (Violin Plot)",
+    x = "Gender",
+    y = "Number of Reviews"
+  )
 
 ```
 
+boxplot price by gender
+
 ```{r}
+ggplot(host_names_gender, aes(x = gender, y = price)) +
+  geom_boxplot() +
+  labs(
+    title = "Price by Gender",
+    x = "Gender",
+    y = "Price"
+  )
+
+ggplot(host_names_gender, aes(x = gender, y = price)) +
+  geom_violin() +
+  labs(
+    title = "Number of Reviews by Gender (Violin Plot)",
+    x = "Gender",
+    y = "Number of Reviews"
+  )
+```
+
+Boxplot by calculated_host_listings_count
+
+```{r}
+ggplot(host_names_gender, aes(x = gender, y = calculated_host_listings_count)) +
+  geom_boxplot() +
+  labs(
+    title = "calculated_host_listings_count by Gender",
+    x = "Gender",
+    y = "calculated_host_listings_count"
+  )
+```
+
+# Earnings analysis
+
+## Data Exploration
+
+Examine summary statistics including range, and overview distribution of earnings
+
+```{r}
+
+summary(df$lowest_monthly_earnings)
+
+max(df$lowest_monthly_earnings) - min(df$lowest_monthly_earnings)
 
 df %>%
-  ggplot(mapping = aes(x = room_type, y = log_price)) +
-  geom_violin()
+  ggplot(aes(lowest_monthly_earnings)) +
+  geom_histogram() +
+  scale_y_continuous()
 
 ```
+
+As the distribution is extremely skewed to the right, we will conduct a log-transformation
 
 ```{r}
 
+# log-transform earnings + filter out infinite values
+df <- df %>%
+  mutate(log_earnings = log(lowest_monthly_earnings)) %>%
+  filter(is.finite(log_earnings), is.finite(log_price), is.finite(log_reviews_per_month))
+
+# store summary statistics of earnings distribution
+# upper whisker
+IQR <- IQR(df$log_earnings)
+calc_upper_whisker <- (quantile(df$log_earnings, probs = 0.75) + IQR*1.5)
+select_upper_whisker <- df$log_earnings >= calc_upper_whisker
+upper_whisker <- df$log_earnings[select_upper_whisker]
+upper_whisker <- min(upper_whisker)
+
+# lower whisker
+calc_lower_whisker <- (quantile(df$log_earnings, probs = 0.25) - IQR*1.5)
+select_lower_whisker <- df$log_earnings <= calc_lower_whisker
+lower_whisker <- df$log_earnings[select_lower_whisker]
+lower_whisker <- max(lower_whisker)
+
+# upper and lower quartile and median
+earnings_distribution <- c(
+  min(df$log_earnings), 
+  quantile(df$log_earnings, probs = c(0.25, 0.5, 0.75)),
+  max(df$log_earnings)
+)
+
+#draw histogram
 df %>%
-  filter(!is.na(last_review_age)) %>%
-  mutate(log_last_review_age = log(as.integer(last_review_age))) %>%
-  ggplot(mapping = aes(x = room_type, y = log_last_review_age)) +
-  geom_violin()
+  ggplot(aes(x = log_earnings)) +
+  geom_histogram() +
+  labs(title="Earnings Distribution") +
+  xlab("Logged Earnings") +
+  ylab("Frequency") 
+
+# draw boxplot showing delogged values
+df %>%
+  ggplot(aes(y = log_earnings)) +
+  geom_boxplot() +
+  stat_boxplot(geom = "errorbar") +
+  scale_y_continuous(breaks = c(earnings_distribution, lower_whisker, upper_whisker), 
+                     labels = as.integer(exp((c(earnings_distribution, lower_whisker, upper_whisker))))) +
+  scale_x_continuous(breaks = NULL, labels = NULL) +
+  labs(
+    y = "Lowerst Monthly Earnings (De-Logged)",
+    title = "Earnings Distribution"
+  )
+
+# violin plot by neighbourhood groups
+df %>%
+  ggplot(aes(x = reorder(neighbourhood_group, +lowest_monthly_earnings), y = log_earnings)) +
+  geom_violin(draw_quantiles = c(0.25, 0.5, 0.75), trim = TRUE) +
+  labs(
+    title = "Earnings Distribution by Earnings",
+    x = ""
+  )
+
 
 ```
+
+The lowest monthly earnings are approximately normally distributed.
+50% of listings have earned up to 225 per month. 75% of listings have earned up to 612 per month.
+There is much more variance in monthly earnings in the upper 25% of the distribution.
+As seen in the original boxplot, some outliers have extremely high earnings.
+
+
+```{r}
+# create vector inidicating position in earnings distribution
+q9 <- quantile(df$lowest_monthly_earnings, probs = 0.9)
+quantile_indicator <- ifelse(df$lowest_monthly_earnings > q9, "upper 10%", "lower 90%")
+df <- cbind(df, quantile_indicator)
+
+# 
+
+earningsplot_df <- df %>%
+  group_by(quantile_indicator) %>%
+  summarise(
+    tot_earnings_mio = (sum(lowest_monthly_earnings)/1000000)
+  )
+
+earningsplot_df %>%
+  ggplot(aes(quantile_indicator, tot_earnings_mio)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = sprintf("%.2f", earningsplot_df$tot_earnings_mio)), vjust = -0.5, size = 3) +
+  scale_y_continuous(breaks = seq(0, max(earningsplot_df$tot_earnings_mio), by = 3)) +
+  labs(
+    title = "Total Earnings of upper 10% and lower 90% of Distribution",
+    y = "Lowest Monthley Earnings in Mio",
+    x = NULL
+  )
+ggsave("tot_earn_by_distribution.pdf")
+
+```
+
+The upper 10% of listings earn almost 150% of the lower 90%.
+
+```{r}
+# examine how much each neighbourhood group earns and the share of room types for each
+
+earningsplot_hood_room <- df %>%
+  group_by(neighbourhood_group, room_type) %>%
+  summarise(
+    tot_earnings_mio = (sum(lowest_monthly_earnings)/1000000),
+  )
+
+n_hood <- df %>%
+  group_by(neighbourhood_group) %>%
+  summarise(
+    count = n())
+
+earningsplot_hood_room %>%
+  ggplot(aes(x = reorder(neighbourhood_group, +tot_earnings_mio), y = tot_earnings_mio, fill = room_type)) +
+  geom_bar(stat = "identity") +
+  scale_y_continuous(breaks = seq(0, 20, by = 1)) +
+  labs(
+    title = "Total Earnings by Neighbourhood and Room Type",
+    y = "Lowest Monthly Earnings in Mio",
+    x = NULL,
+    fill = "Room Type"
+  )
+
+```
+Home-type listings in Manhattan generate the most earnings
+
+```{r}
+
+# Relationships between earnings and other variables
+
+df %>%
+  ggplot(aes(x = , y = log_earnings))
+```
+
 
 # Geographic analysis
+
+## Distances
+
+First we want to observe the correlation between price per night and the distance to the biggest airport jfk.
+```{r}
+
+plot(df$distance_to_jfk, df$price)
+
+```
+Since their are a few outliers in price, we can either use the variable log_price or use the 99pct quartil of the variable price. 
+Furthermore there seem to be listings > 30km away from jfk. Those will be removed as well.
+```{r}
+
+price_pct99 <- quantile(df$price, probs = 0.99)
+
+#create new dataframe where outliers are removed
+df_2 <- df %>% filter(price < price_pct99) %>% filter(distance_to_jfk < 30)
+
+```
+
+```{r}
+
+plot(df_2$distance_to_jfk, df_2$price)
+
+```
+Now we want to proceed with a linear regression.
+```{r}
+lin_model_jfk <- lm(price ~ distance_to_jfk, data = df_2)
+summary(lin_model_jfk)
+
+plot(df_2$distance_to_jfk, df_2$price, xlab = "Distance to JFK (in kilometers)", ylab = "Price per night (in $)", main = "Regression anaylsis (distance to JFK vs price per night)")
+abline(lin_model_jfk, col = "red")
+```
+A significant correlation between distance to JFK and price per night (ppn) can be observed. The ppn increases around 7$ with every kilometer distance, c.p.. This result is intuitve since apartments around the airport i.e. airport hotels are always cheaper. Furthermore apartments nearer to the airport could be less expensive due to external factors like the noise of planes. 
+In further discussions can be observed, if the outliers > 30km away from JFK could have a negative impact on the price, i.e. these apartments are to far away from center points of NY.
+
+Now we conclued with the same anaylsis, but for all three airports.
+```{r}
+lin_model_airports <- lm(price ~ distance_to_jfk + distance_to_ewr + distance_to_lga, data = df_2)
+summary(lin_model_airports)
+```
+Lets check for correlation between the price and the distance to NY sights.
+```{r}
+lin_model_sights <- lm(price ~ distance_to_esb + distance_to_sol + distance_to_cp, data = df_2)
+summary(lin_model_sights)
+```
+The impact of sights is always significant. The estimate for esb is negative which is intuitve, because in the surounding area the rent is high, which leads to higher ppn in the listed airbnbs. Moving away from the center has therefore negative impact on prices. 
+
+Check, if we can increase quality of model with adding variables.
+```{r}
+#lin_model2 <- lm(price ~ distance_to_jfk + neighbourhood_group + room_type + number_of_reviews, data = df_reduced2)
+#summary(lin_model2)
+
+
+#plot(df_reduced$distance_to_jfk, df_reduced$price, xlab = "Distance to #JFK (in meters)", ylab = "Price per night (in $)", main = "Regression #anaylsis (df_reduced)")
+#abline(lin_model, col = "red")
+```
+
+Lets investigate if other focal points can express similar results.
+
+```{r}
+
+plot(df$distance_to_ewr, df$price)
+
+```
+For completeness: Do same with LGA Airport
+
+```{r}
+
+plot(df$distance_to_lga, df$price)
+
+```
+
+Not only airports can be focal points, sights might be also from interest. Therefore we look for the coordinates of statue of liberty, central park, empire state building.
+
+```{r}
+price_pct99 <- quantile(df$price, probs = 0.99)
+df_reduced2 <- df %>% filter(price < price_pct99)
+
+plot(df_reduced2$distance_to_sol, df_reduced2$price)
+```
+```{r}
+
+lin_model3 <- lm(price ~ distance_to_sol, data = df_reduced2)
+summary(lin_model3)
+
+
+plot(df_reduced2$distance_to_sol, df_reduced2$price, xlab = "Distance to statue of liberty (in meters)", ylab = "Price per night (in $)", main = "Regression anaylsis (df_reduced2)")
+abline(lin_model3, col = "red")
+
+```
+
+```{r}
+
+price_pct99 <- quantile(df$price, probs = 0.99)
+df_reduced2 <- df %>% filter(price < price_pct99)
+
+plot(df_reduced2$distance_to_esb, df_reduced2$price)
+
+```
+
+```{r}
+lin_model4 <- lm(price ~ distance_to_esb, data = df_reduced2)
+summary(lin_model4)
+
+
+plot(df_reduced2$distance_to_esb, df_reduced2$price, xlab = "Distance to empire state bulding (in kilometers)", ylab = "Price per night (in $)", main = "Regression anaylsis (df_reduced2)")
+abline(lin_model3, col = "red")
+```
+
+```{r}
+lin_model5 <- lm(price ~ distance_to_cp, data = df_reduced2)
+summary(lin_model5)
+
+
+plot(df_reduced2$distance_to_cp, df_reduced2$price, xlab = "Distance to central park (in kilometers)", ylab = "Price per night (in $)", main = "Regression anaylsis (df_reduced2)")
+abline(lin_model5, col = "red")
+```
+
+```{r}
+df_reduced2$sq_distance_to_esb <- df_reduced2$distance_to_esb^2
+
+sq_model5 <- lm(price ~ distance_to_esb + sq_distance_to_esb, data = df_reduced2)
+summary(sq_model5)
+```
+```{r}
+values <- seq(0, 25, 0.1)
+
+pred <- predict(sq_model5, list(distance_to_esb = values, sq_distance_to_esb = values^2))
+
+plot(df_reduced2$distance_to_esb, df_reduced2$price, xlab = "Distance to esb (in kilometers)", ylab = "Price per night (in $)", main = "Regression anaylsis (df_reduced2)")
+lines(values, pred, col = "blue")
+
+```
+```{r}
+df_reduced2$sq_distance_to_esb <- df_reduced2$distance_to_esb^2
+df_reduced2$poly_distance_to_esb <- df_reduced2$distance_to_esb^3
+
+poly_model5 <- lm(price ~ distance_to_esb + sq_distance_to_esb + poly_distance_to_esb, data = df_reduced2)
+summary(poly_model5)
+
+values <- seq(0, 25, 0.1)
+
+pred <- predict(poly_model5, list(distance_to_esb = values, sq_distance_to_esb = values^2, poly_distance_to_esb = values^3))
+
+plot(df_reduced2$distance_to_esb, df_reduced2$price, xlab = "Distance to esb (in kilometers)", ylab = "Price per night (in $)", main = "Regression anaylsis (df_reduced2)")
+lines(values, pred, col = "blue")
+
+```
+
+Now, use all calculated distances to sights to make a regression with on price.
+```{r}
+lin_model6 <- lm(price ~ distance_to_esb + distance_to_sol + distance_to_cp + neighbourhood_group, data = df_reduced2)
+summary(lin_model6)
+
+
+#plot(df_reduced2$distance_to_cp, df_reduced2$price, xlab = "Distance #to central park (in kilometers)", ylab = "Price per night (in $)", #main = "Regression anaylsis (df_reduced2)")
+#abline(lin_model5, col = "green")
+```
+```{r}
+bins <- c(0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 500)
+labels <- c("0-5", "6-10", "11-15", "16-20", "21-25", "26-30", "31-35", "36-40", "41-45", "46-50", ">50")
+
+df$distance_esb_bin <- cut(df$distance_to_esb, breaks = bins, labels = labels, include.lowest = TRUE, right = FALSE)
+
+df_reduced2$distance_esb_bin <- cut(df_reduced2$distance_to_esb, breaks = bins, labels = labels, include.lowest = TRUE, right = FALSE)
+
+
+
+table(df$distance_esb_bin)
+table(df_reduced2$distance_esb_bin)
+
+```
+```{r}
+df %>%
+  group_by(distance_esb_bin) %>%
+  summarise(mean = mean(price))
+```
+```{r}
+ggplot(df_reduced2, aes(x=distance_esb_bin, y=price)) + 
+  geom_boxplot()+
+  stat_summary(fun.y=mean, geom="point", 
+               shape=20, size=4, color="red", fill="red")
+```
+
+
+
+## Neighbourhood group distribution
 
 ```{r}
 
@@ -159,7 +1114,7 @@ df %>%
 
 ```
 
-# Most expensive neighbourhoods
+## Most expensive neighbourhoods
 
 ```{r}
 
@@ -167,7 +1122,7 @@ get_most_expensive_neighbourhoods_in_group <- function(group) {
   most_expensive_neighbourhoods <- df %>%
     filter(neighbourhood_group == group) %>%
     group_by(neighbourhood) %>%
-    summarize(sum_price = sum(price)) %>%
+    summarise(sum_price = sum(price)) %>%
     arrange(desc(sum_price))
   
   df %>%
@@ -188,7 +1143,7 @@ get_most_expensive_neighbourhoods_in_group <- function(group) {
 
 ```
 
-## Queens
+### Queens
 
 ```{r}
 
@@ -196,7 +1151,7 @@ get_most_expensive_neighbourhoods_in_group("Queens")
 
 ```
 
-## Brooklyn
+### Brooklyn
 
 ```{r}
 
@@ -204,7 +1159,7 @@ get_most_expensive_neighbourhoods_in_group("Brooklyn")
 
 ```
 
-## Manhattan
+### Manhattan
 
 ```{r}
 
@@ -212,7 +1167,7 @@ get_most_expensive_neighbourhoods_in_group("Manhattan")
 
 ```
 
-## Staten Island
+### Staten Island
 
 ```{r}
 
@@ -220,7 +1175,7 @@ get_most_expensive_neighbourhoods_in_group("Staten Island")
 
 ```
 
-## Bronx
+### Bronx
 
 ```{r}
 
@@ -228,7 +1183,7 @@ get_most_expensive_neighbourhoods_in_group("Bronx")
 
 ```
 
-## Queens
+### Queens
 
 ```{r}
 
@@ -236,7 +1191,7 @@ get_most_expensive_neighbourhoods_in_group("Queens")
 
 ```
 
-# Geographic Listing density
+## Geographic Listing density
 
 ```{r}
 
@@ -320,8 +1275,8 @@ room_type_icons <- iconList(
 ```{r}
 
 plot_map <- function (df, zoom, ratio, showMarkers) {
-  center_lng <- (df %>% summarize(mean(longitude)))[1, 1]
-  center_lat <- (df %>% summarize(mean(latitude)))[1, 1]
+  center_lng <- (df %>% summarise(mean(longitude)))[1, 1]
+  center_lat <- (df %>% summarise(mean(latitude)))[1, 1]
   
   map_max <- nrow(df) * ratio
   
@@ -377,7 +1332,7 @@ plot_map(df, zoom = 10, ratio = 0.05, showMarkers = F)
 
 ```
 
-## Manhattan
+### Manhattan
 
 ```{r}
 
@@ -388,7 +1343,7 @@ plot_map(manhattan, 11.5, ratio = 0.02, showMarkers = T)
 
 ```
 
-## Bronx
+### Bronx
 
 ```{r}
 
@@ -399,7 +1354,7 @@ plot_map(bronx, 11.5, ratio = 0.01, showMarkers = T)
 
 ```
 
-## Queens
+### Queens
 
 ```{r}
 
@@ -419,7 +1374,7 @@ plot_map(staten_island, 12, ratio = 0.05, showMarkers = T)
 
 ```
 
-## Brooklyn
+### Brooklyn
 
 ```{r}
 
@@ -430,13 +1385,13 @@ plot_map(brooklyn, 12, ratio = 0.02, showMarkers = T)
 
 ```
 
-# Geographic distribution of room types
+## Geographic distribution of room types
 
 ```{r}
 
 plot_cluster_map <- function(df, zoom) {
-  center_lng <- (df %>% summarize(mean(longitude)))[1, 1]
-  center_lat <- (df %>% summarize(mean(latitude)))[1, 1]
+  center_lng <- (df %>% summarise(mean(longitude)))[1, 1]
+  center_lat <- (df %>% summarise(mean(latitude)))[1, 1]
     
   df %>%
     leaflet() %>%
@@ -451,8 +1406,8 @@ plot_cluster_map <- function(df, zoom) {
 ```{r}
 
 plot_room_type_map <- function(df, zoom) {
-  center_lng <- (df %>% summarize(mean(longitude)))[1, 1]
-  center_lat <- (df %>% summarize(mean(latitude)))[1, 1]
+  center_lng <- (df %>% summarise(mean(longitude)))[1, 1]
+  center_lat <- (df %>% summarise(mean(latitude)))[1, 1]
     
   df %>%
     leaflet() %>%
@@ -516,7 +1471,7 @@ plot_room_type_map(df %>% arrange(availability_365) %>% head(200), 11)
 ```
 
 
-## Private room
+### Private room
 
 ```{r}
 
@@ -527,7 +1482,7 @@ plot_cluster_map(private_room, 10)
 
 ```
 
-## Entire home
+### Entire home
 
 ```{r}
 
@@ -538,7 +1493,7 @@ plot_cluster_map(entire_home, 10)
 
 ```
 
-## Shared room
+### Shared room
 
 ```{r}
 
@@ -551,13 +1506,13 @@ plot_cluster_map(shared_room, 10)
 
 
 
-# Most expensive listing position
+## Most expensive listing position
 
 ```{r}
 
 plot_marker_map <- function(df, zoom, color) {
-  center_lng <- (most_expensive %>% summarize(mean(longitude)))[1, 1]
-  center_lat <- (most_expensive %>% summarize(mean(latitude)))[1, 1]
+  center_lng <- (most_expensive %>% summarise(mean(longitude)))[1, 1]
+  center_lat <- (most_expensive %>% summarise(mean(latitude)))[1, 1]
 
   df %>%
     leaflet() %>%
@@ -569,7 +1524,7 @@ plot_marker_map <- function(df, zoom, color) {
 
 ```
 
-# Cheapest listings position
+## Cheapest listings position
 
 ```{r}
 

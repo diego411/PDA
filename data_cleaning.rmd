@@ -12,6 +12,7 @@ library( dplyr )
 library( gridExtra )
 library( ggmap )
 library( geosphere )
+library( cld2 )
 
 ```
 
@@ -293,12 +294,126 @@ Most listings are in bins 2 and 3, i.e., between $51 and $500. The adjacent bins
 
 ## Name length
 
-Create a variable that counts the characters in a name.
+This adds a column to the dataframe with the count of characters in a listing's name after having removed the spaces: 
+
+```{r}
+
+#count characters (without " ")
+df <- df %>%
+  mutate(name_length = nchar(str_replace_all(name, " ", "")))
+
+```
+
+## Name Category
+
+Get average number of characters, median, maximum and minimum:
+
+```{r}
+
+avg_name_length <- mean(df$name_length)
+median_name_length <- median(df$name_length)
+minimum_name_length <- min(df$name_length)
+maximum_name_length <- max(df$name_length)
+
+```
+The minimum number of characters is 0, which suggests that there are listings without a name. The mean and median are very close (31,76 to 32) which indicates that the distribution could be (close to) symmetrical. The longest name having 151 characters seems to be an outlier. 
+
+Plot number of characters in histogram using bins of size 15: 
+
+```{r}
+bin_labels = seq(0, maximum_name_length, 10)
+labels <- paste0("  ",bin_labels, "-", bin_labels + 9, "  ")
+
+df %>%
+  ggplot( mapping = aes( x=name_length )) +
+  geom_histogram(binwidth = 10)  +
+  stat_bin(
+    binwidth = 10,
+    geom = 'text',
+    aes(label = after_stat(count)),
+    vjust = -0.5,
+    size = 3,
+    color = "black"
+  ) +
+  labs( title = "How long are the names of AirBnB listings?",
+        x = "Number of characters in listing's name", 
+        y = "Frequency") +
+  scale_x_continuous(breaks = bin_labels, labels=labels) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+While there are a few outliers (which we look at below), most names fall between 15 and 59 characters.
+Quantile berechnen
+
+
+Look at the longest names (>75) and the shortest (<15): 
+
+```{r}
+
+df %>% filter(name_length > 60)
+df %>% filter(name_length < 10)
+
+```
+Shorter names not very informational, while the longer names have almost too much information. 
+It could make sense to categorize the length into three bins. 
+
+
+Make length of name into a factor (short, medium, long): 
+
+```{r}
+df <- df %>% 
+  mutate(name_category = cut(name_length, 
+                        breaks = c(0, 9, 59, 151),
+                        labels = c("short", "medium", "long"),
+                        include.lowest = TRUE)) %>% mutate(name_category = as.factor(name_category))
+```
+
+## Upper Case
+
+Another aspect that might be worth investigating is the use of upper case letters. Manual screening showed that there are some names that only consist of upper case letters which can be perceived as "screaming" on the internet. 
+
+Count the number of upper case letters in a listing's name. Then introduce a new categorical (factor) variable that indicates whether a name consists of only upper case letters (1) or not (0) and get some basic summary statistics about it: 
+
+TODO: Remove !,, and such from name length. There could be all-upper-case names that don't appear in list because they contain punctuation :D
 
 ```{r}
 
 df <- df %>%
-  mutate(name_length = nchar(name))
+  mutate(upper_case_count = str_count(name, "[A-Z]"))
+
+df <- df %>% 
+  mutate(is_upper_case = ifelse(name_length == upper_case_count, 1, 0)) %>% 
+  mutate(is_upper_case = as.factor(is_upper_case))
+
+df %>% 
+  filter(is_upper_case == 1)
+
+df %>% 
+  count(is_upper_case ==1)
+
+```
+
+There are 554 listings where the name contains upper case letters only. 
+
+## Language
+
+Showed some names in a different language. Let's detect them and see if there is an correlation to the number of reviews: 
+
+```{r}
+#install.packages("cld3")
+
+df <- df %>% 
+  mutate(name_language = detect_language(text = name)) 
+df %>% 
+  count(name_language)
+df$name_language <- df$name_language %>% replace_na('')
+
+```
+38 different languages (37 and NA) were detected, majority english. For ease, since new york listing, we concentrate on the difference between english and no english. 
+
+```{r}
+
+df <- df %>% 
+  mutate(is_english = ifelse(name_language == "en", 1, 0)) 
 
 ```
 

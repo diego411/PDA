@@ -1,0 +1,299 @@
+---
+title: "gender_analysis"
+---
+Load required packages.
+
+```{r setup, include=FALSE}
+require("gender")
+```
+
+
+Set up workspace, i.e., remove all existing data from working memory, initialize the random number generator, turn of scientific notation of large numbers, set a standard theme for plotting, etc.
+
+```{r}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+rm(list=ls())
+set.seed(42)
+options(scipen=10000)
+```
+
+
+Load data from CSV file.
+
+```{r}
+airbnb_df <- read.csv("airbnb_data.csv", header=TRUE)
+```
+
+
+#MULTIPLE HOSTINGS 
+
+Hat das schon jemand? -> Dann hier 
+
+By looking at the data, it seems that sometimes multiple hosts are behind one host_id. There are various ways to identify them. We assume that there is more than one host, if one of the following appears in a host name: "+" , "/", " and ", "&". To make sure we do not include names like "Andrea",  we search for " and " with leading and trailing spaces.
+
+```{r}
+#adds logical column that indicates whether name contains " and ", "+", "/" or "&" ; ignore.case makes sure that all variations of " and " are covered
+airbnb_df$is_more_than_one_host <- grepl(" and |&|\\+|/", airbnb_df$host_name, ignore.case = TRUE)
+#adds column that contains vector of all names if is_more_than_one_host is true (more than one host)
+airbnb_df$host_names_all <- ifelse(airbnb_df$is_more_than_one_host == TRUE, strsplit(airbnb_df$host_name, "(?i) and |&| & |\\+| \\+ |/| / ", perl=TRUE), c(""))
+#count rows where this is the case
+nrow(airbnb_df[airbnb_df$host_names_all != '', ])
+```
+
+TODO: GROUP BY HOST ID TO GET NUMBER OF HOSTS WITH MORE THAN ONE 
+At least 1852 listings appear to have more than one host. This does not necessarily mean that the rest have only a single host. Considering that companies also list their accommodations on Airbnb, this probably rather represents the minimum. The presence of hosts associated with companies is not part of this analysis and needs further investigations. 
+
+Short look at how many distinct hosts this is: 
+
+```{r}
+airbnb_df %>% filter(is_more_than_one_host == TRUE) %>% summarise(count = n_distinct(host_id))
+```
+There are 1229 distinct host_ids.
+
+#GENDER ANALYSIS
+
+Given the availability of host names, it might be insightful to look at the gender of the hosts and how the gender relates to other variables. 
+We will use the gender package (https://github.com/lmullen/gender) to assign a gender classification to each host name. 
+The package uses data from the Social Security Administration, the U.S. Census Bureau (via IPUMS USA), and the North Atlantic Population Project. 
+We are aware that this approach and therefore the results from this whole section can only be of limited significance and should only be taken as indicator that this might be something worth investigating.
+
+Before we do this, we need to split the values in the column that contains all names and create a row for each name:  
+
+```{r}
+#add a new column called "x", filter for all values in "host_names_all" where the list contains more than one value (meaning more than one host) and use unnest to make a separate row for each name in "host_names_all" then rename "host_names_all" to "host_names_splitted" and call "x" "host_name_all" instead
+airbnb_df <- airbnb_df %>% mutate(x = host_names_all) %>% filter(lengths(host_names_all) > 0) %>% 
+  unnest(host_names_all) %>% rename(host_names_splitted = host_names_all) %>% rename(host_names_all = x)
+#add names where empty to splitted column so the original is untouched
+airbnb_df$host_names_splitted[!airbnb_df$is_more_than_one_host] <- airbnb_df$host_name[!airbnb_df$is_more_than_one_host]
+#ensure airbnb_df stays a data drame
+airbnb_df <- as.data.frame(airbnb_df)
+airbnb_df
+```
+
+
+Now we can assign the sex/gender to each name, using the "gender" package mentioned above. We do this in chunks, to speed up the process. 
+
+```{r}
+chunksize <- 100 
+#two temporary variables 
+min <- 1
+max <- 100
+#create temporary dataframe
+gender <- data.frame()
+for(i in 1:ceiling(nrow(airbnb_df)/chunksize)){
+  #check if max is higher than the number of rows in the dataframe to make sure slicing in next line works correctly
+  max <- ifelse(max>nrow(airbnb_df), nrow(airbnb_df), max)
+  #select next 100 rows
+  row_slice_100 <- airbnb_df[min:max,]
+  #use gender function to assign gender
+  host_names_100_gender <- gender(row_slice_100$host_names_splitted, year=2010, method="ssa")
+  #rename the name column that was automatically created by the function gender to make sure it can be joined in the next line and remove duplicate columns
+  host_names_100_gender <- host_names_100_gender %>% rename(host_names_splitted = name) %>% distinct(host_names_splitted, .keep_all = TRUE)
+  #join the results from the use of the gender function with the slice of the data frame and drop columns that were automatically added by the function "gender" 
+  host_names_gender <- row_slice_100 %>% left_join(host_names_100_gender, by = "host_names_splitted") %>%  dplyr::select(-c(proportion_male, proportion_female, year_min, year_max))
+  
+  #add 100 to min and max to select next 100 rows in next iteration
+  min <- min+100
+  max <- max+100
+  #add rows to temporary df gender
+  gender <- rbind(gender, host_names_gender)
+}
+#assign gender to airbnb_df and make sure it is a data frame
+airbnb_df <- as.data.frame(gender)
+
+#remove all temporary used variables and the temporary data frame
+rm(gender, min, max, chunksize, i, row_slice_100, host_names_100_gender, host_names_gender)
+
+airbnb_df$gender <- as.factor(airbnb_df$gender)
+```
+
+Let's see if there are hosts with even more than two names by counting all the names associated with a listing id:
+
+```{r}
+airbnb_df <- airbnb_df %>%
+  group_by(id) %>%
+  mutate(host_count = n()) %>%
+  as.data.frame()
+
+max(airbnb_df$host_count)
+
+```
+
+There seems to be a few listings with more than even two hosts. Looking at the data there is one with 4 hosts and one with 3. 
+
+
+We now take a closer look at the "combined" hosts. We only want to assign one gender per host_id, so that we have the same number of rows as in the original dataset. This means we want to categorize into three categories: male, female, mixed.
+
+```{r}
+# create temporary data frame and filter for rows where there is more than one host and then group by host_id and check if gender values are the same and assign the right value
+result_df <- airbnb_df %>%
+  filter(is_more_than_one_host == TRUE) %>%
+  group_by(host_id) %>%
+  summarise(result = if (length(unique(gender)) == 1) unique(gender) else "mixed")
+
+# Merge the result back into the original data frame
+airbnb_df <- left_join(airbnb_df, result_df, by = "host_id")
+airbnb_df <- airbnb_df %>%
+  mutate(gender = case_when(
+    !is.na(result) ~ result,
+    TRUE ~ gender  # Keep the original value when the condition is not met
+  )) %>% dplyr::select(-c(host_names_splitted, result)) %>% distinct(.keep_all =  TRUE)
+
+rm(result_df)
+```
+
+
+We will now take a look at the gender distribution of the listings in our dataset. Note that hosts can appear more than once. 
+
+```{r}
+#counts by gender
+gender_counts <- airbnb_df %>%
+  group_by(gender) %>%
+  summarize(count = n())
+
+#sum of all entries
+total_count <- sum(gender_counts$count)
+
+# Creates a pie chart
+ggplot(gender_counts, aes(x = "", y = count, fill = gender)) +
+  geom_bar(stat = "identity") +
+  coord_polar("y") +
+  labs(title = "Gender Distribution") +
+  theme_void() + 
+  geom_text(aes(label = paste0(gender, "\n", count, " (", scales::percent(count / total_count), ")")), 
+            position = position_stack(vjust = 0.5))
+
+#remove help variables and dfs 
+rm(gender_counts, total_count)
+```
+We can see a slight overrepresentation of female names, but with 20% of the names remaining unidentified this has only limited significance.Next, we will investigate these unidentified names.
+Another interesting insight is that most hosts that are more than one person seem to be mixed. Remember 1852 from above and now we see 1516 hosts of mixed gender. 
+
+---------- Bis hier ist alles ready ------------
+
+
+
+Investigate N/A values. We do 
+TODO: Wordcloud
+
+```{r}
+host_names_no_gender <- airbnb_df %>% filter(is.na(gender))
+host_names_no_gender <- airbnb_df %>% distinct(host_name_splitted) 
+host_names_no_gender
+host_count <- airbnb_df%>% count(host_name_splitted, sort = TRUE)
+host_count
+```
+
+
+
+Remove N/A values: 
+
+```{r}
+host_names_gender <- host_names_gender %>% filter(!is.na(gender))
+
+gender_counts <- host_names_gender %>%
+  group_by(gender) %>%
+  summarize(count = n())
+
+total_count <- sum(gender_counts$count)
+
+# Create a pie chart
+ggplot(gender_counts, aes(x = "", y = count, fill = gender)) +
+  geom_bar(stat = "identity") +
+  coord_polar("y") +
+  labs(title = "Gender Distribution") +
+  theme_void() + 
+  geom_text(aes(label = paste0(gender, "\n", count, " (", scales::percent(count / total_count), ")")), 
+            position = position_stack(vjust = 0.5))
+```
+
+number of listings male vs female:
+
+```{r}
+
+```
+
+more than one listing male vs female:
+
+```{r}
+more_than_one_listing <- host_names_gender %>% group_by(host_id) %>%summarize(total_listing = sum(n())) 
+unique_listing_counts <- more_than_one_listing %>%
+  distinct(host_id, total_listing)
+merged_data <- host_names_gender %>% left_join(unique_listing_counts, by="host_id") %>% filter(total_listing > 1) %>% distinct(host_id, host_name, gender, total_listing)
+merged_data
+```
+
+
+male vs female neighbourhoods:
+```{r}
+df_counts <- df_counts %>%
+  group_by(neighbourhood_group) %>%
+  mutate(percentage = count / sum(count) * 100)
+
+# Create the stacked bar chart
+p <- ggplot(df_counts, aes(x = neighbourhood_group, y = percentage, fill = gender)) +
+  geom_bar(stat = "identity") +
+  labs(
+    title = "Listings by Neighborhood and Gender",
+    x = "Neighborhood",
+    y = "Percentage"
+  )
+
+# Annotate the bars with percentages adding up to 100%
+p + geom_text(aes(label = scales::percent(percentage / 100)), position = position_stack(vjust = 0.5))
+```
+
+Boxplot number of reviews by gender:
+TODO: Add a pyramid chart (wie oft demographics in einem Land dargestellt werden)
+
+```{r}
+ggplot(host_names_gender, aes(x = gender, y = number_of_reviews)) +
+  geom_boxplot() +
+  labs(
+    title = "Number of Reviews by Gender",
+    x = "Gender",
+    y = "Number of Reviews"
+  )
+
+ggplot(host_names_gender, aes(x = gender, y = number_of_reviews)) +
+  geom_violin() +
+  labs(
+    title = "Number of Reviews by Gender (Violin Plot)",
+    x = "Gender",
+    y = "Number of Reviews"
+  )
+
+```
+
+boxplot price by gender
+
+```{r}
+ggplot(host_names_gender, aes(x = gender, y = price)) +
+  geom_boxplot() +
+  labs(
+    title = "Price by Gender",
+    x = "Gender",
+    y = "Price"
+  )
+
+ggplot(host_names_gender, aes(x = gender, y = price)) +
+  geom_violin() +
+  labs(
+    title = "Number of Reviews by Gender (Violin Plot)",
+    x = "Gender",
+    y = "Number of Reviews"
+  )
+```
+
+Boxplot by calculated_host_listings_count
+
+```{r}
+ggplot(host_names_gender, aes(x = gender, y = calculated_host_listings_count)) +
+  geom_boxplot() +
+  labs(
+    title = "calculated_host_listings_count by Gender",
+    x = "Gender",
+    y = "calculated_host_listings_count"
+  )
+```
+

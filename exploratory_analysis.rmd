@@ -435,7 +435,12 @@ df <- df %>%
 
 ## Earnings
 
-Create variable indicating listings average monthly earnings
+Create variable indicating listings average monthly earnings.
+
+Note that we assume that every visitor leaves a review as a reputation system
+incentivizes users to do so. Note also, that we are only able to calculate
+the lowest potential earnings as we have only insight into the minimum number
+of nights visitors need to stay.
 
 To get an overview of the data, explore correlations between variables.
 

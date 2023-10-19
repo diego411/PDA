@@ -557,35 +557,6 @@ ggplot(df, aes(x = distance_from_center, y = log_price)) +
 The correlation coefficient of -0.4604 suggests a moderate negative relationship.
 
 
-## Word Cloud
-
-Which terms are used most often in descriptions?
-
-```{r}
-# Create a Corpus
-text <- Corpus(VectorSource(df$name))
-
-# Convert all characters to lowercase, remove punctuation and common English stopwords (e.g., "and", "the", "of")
-text <- tm_map(text, content_transformer(tolower))
-text <- tm_map(text, removePunctuation)
-text <- tm_map(text, removeWords, stopwords("en"))
-
-# Create a term-document matrix
-# Rows represent terms (words) and columns represent individual entries from df$name. The values in the matrix indicate the frequency of a term in a given document.
-tdm <- TermDocumentMatrix(text)
-
-# Calculate word frequencies, sorted in decreasing order
-m <- as.matrix(tdm)
-word_freqs <- sort(rowSums(m), decreasing=TRUE) 
-
-# Create a data frame with two columns: word (the terms or words) and freq (their respective frequencies)
-dm <- data.frame(word = names(word_freqs), freq = word_freqs)
-
-# Create a basic wordcloud
-wordcloud(words=dm$word, freq=dm$freq, min.freq=1, max.words=150, random.order=FALSE)
-
-```
-
 ## Distances
 
 ```{r}
@@ -1315,7 +1286,7 @@ wordcloud(words=top_150$word, freq=top_150$freq, min.freq=1, max.words=150, rand
 
 # Host Analysis
 
-#```{r}
+```{r}
 results <- df %>%
   group_by(host_id) %>%
   count(host_name) %>%

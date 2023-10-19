@@ -1794,7 +1794,6 @@ ggplot(df_reduced2, aes(x=distance_esb_bin, y=price)) +
 ```
 
 
-
 ## Neighbourhood group distribution
 
 ```{r}
@@ -1802,81 +1801,70 @@ ggplot(df_reduced2, aes(x=distance_esb_bin, y=price)) +
 neighbourhood_group_counts <- df %>%
   count(neighbourhood_group)
 
+# dataframe containing population of every neighbourhood group in new york (data represents 2020 population)
 population_df <- data.frame(
   neighbourhood_group = c("Manhattan", "Brooklyn", "Queens", "Staten Island", "Bronx"),
   population = c(1600000, 2500000, 2271000, 475000, 1427000)
 )
 
+# dataframe containing area of every neighbourhood group in new york
 area_df <- data.frame(
   neighbourhood_group = c("Manhattan", "Brooklyn", "Queens", "Staten Island", "Bronx"),
   area = c(59, 180, 280, 152, 110)
 )
 
+# creates pie chart showing partition of listings across neighbourhood groups
 listing_count_pie_chart <- ggplot(neighbourhood_group_counts, aes(x = "", y = n, fill = neighbourhood_group)) +
     geom_bar(stat = "identity", width = 1) +
     coord_polar("y", start = 0) +
     ggtitle("Number of listings per neighbourhood group") +
     theme_void()
 
+# creates pie chart showing partition of population across neighbourhood group
 population_pie_chart <- ggplot(population_df, aes(x = "", y = population, fill = neighbourhood_group)) +
     geom_bar(stat = "identity", width = 1) +
     coord_polar("y", start = 0) +
     ggtitle("Population per neighbourhood groups") +
     theme_void()
 
+# creates pie chart showing partition of area across neighbourhood group
 area_pie_chart <- ggplot(area_df, aes(x = "", y = area, fill = neighbourhood_group)) +
     geom_bar(stat = "identity", width = 1) +
     coord_polar("y", start = 0) +
     ggtitle("Area per neighbourhood groups") +
     theme_void()
 
+# collect plots in list
 plots <- list(
   listing_count_pie_chart,
   population_pie_chart,
   area_pie_chart
 )
 
+# arrange plots in grid
 grid.arrange(grobs = plots, padding = 2, ncol = 2)
 
 ```
-
-```{r}
-
-ggplot(df, aes(x = distance_from_center, y = price, color = neighbourhood_group)) +
-  geom_point() +
-  theme_minimal()
-
-```
-
-
-
-```{r}
-
-ggplot(df, mapping = aes(y = log_price, x = neighbourhood_group)) +
-  geom_boxplot()
-
-```
-
-```{r}
-
-df %>%
-  filter(log_price >= 0) %>% 
-  ggplot(mapping = aes(x = log_price, y = neighbourhood_group)) +
-  geom_density_ridges(alpha = 0.5)
-
-```
+The pie charts above show the partition of listings, population and area across every neighbourhood group respectively. As one can see there are certain differences in distribution. While Manhattan holds a large portion of listings it makes up a considerably smaller portion in terms of population and especially area. On the other side the contrary pattern can be observed for Queens, as it holds a large portion of the population and area while making up a considerably smaller portion of listing. In summary it seems that Manhattan capacity in terms of area and population is already used up to a large extend considering the amount of housing listed in it, while Queens might offer opportunities for additional listings as it holds a large area and population.
 
 ## Most expensive neighbourhoods
 
+This section will focus on the different neighbourhood groups and identifying the most expensive neighbourhoods within these groups.
+
 ```{r}
 
+# function to plot bar chart with the most expensive neighbourhoods in a given neighbourhood group
 get_most_expensive_neighbourhoods_in_group <- function(group) {
+  
+  # select most expensive neighbourhoods in the given group by order by price
+  # this is needed for ordering the following plot
   most_expensive_neighbourhoods <- df %>%
     filter(neighbourhood_group == group) %>%
     group_by(neighbourhood) %>%
     summarise(sum_price = sum(price)) %>%
     arrange(desc(sum_price))
   
+  # plot most expensive neighbourhoods in a bar chart
   df %>%
     filter(neighbourhood_group == group) %>%
     group_by(neighbourhood, room_type) %>%
@@ -1903,13 +1891,7 @@ get_most_expensive_neighbourhoods_in_group("Queens")
 
 ```
 
-### Brooklyn
-
-```{r}
-
-get_most_expensive_neighbourhoods_in_group("Brooklyn")
-
-```
+Above one can see the seven most expensive neighbourhoods in Queens. Each bar represents one neighbourhood and the respective cummalitve price, sectioned into the three different room types. Astoria holds the largest share in terms of price with a fairly equal share in private room and entire homes. The high prices in Astonia could be explained by its short distance to Manhattan and closeness to many tourist attraction and other vocal points. 
 
 ### Manhattan
 
@@ -1919,34 +1901,15 @@ get_most_expensive_neighbourhoods_in_group("Manhattan")
 
 ```
 
-### Staten Island
-
-```{r}
-
-get_most_expensive_neighbourhoods_in_group("Staten Island")
-
-```
-
-### Bronx
-
-```{r}
-
-get_most_expensive_neighbourhoods_in_group("Bronx")
-
-```
-
-### Queens
-
-```{r}
-
-get_most_expensive_neighbourhoods_in_group("Queens")
-
-```
+The distribution for Manhattan looks quite different. Instead of one neighbourhood making up the majority of the price density most of the top seven neighbourhood are in a similar range. Furthermore one can see that all of the neighbourhoods are more expensive than Astoria with a cummulative price of over one million for each neighbourhood. Another interesting insight is that most of the price density seems to originate from listing offering entire houses. This is in contrast to Queens that showed a more equal distribution. Most likely the listings labeled as "Entire home/apt" consist mostly of appartement due to the layout of Manhattan with its many skyscrapers. However, this is just an assumption and for future research we would recommend differentiating between homes and appartements and add respective room types. The higher mass for entire homes/appartements could indicate that entire appartments or homes are just proportionally more expensive than private rooms in Manhattan compared to Queens. 
 
 ## Geographic Listing density
 
+This section will focus on the location and geographic density of listings by plotting them on a OpenStreetMap.
+
 ```{r}
 
+# Define different icons to be used for the map
 icon_width <- 30
 icon_height <- 30
 icon_base_url <- "https://img.icons8.com/?size=2x&format=png&id="
@@ -2026,7 +1989,11 @@ room_type_icons <- iconList(
 
 ```{r}
 
+# function for plotting a given dataframe on a OpenStreeMap using leaflet
+# parameters: zoom (integer) controls how zoomed in the map initially is; ratio (float) controls how density is displayed, lower ratio => less value needed for high density; showMarkers (boolean) controls wether markers should be shown or not
 plot_map <- function (df, zoom, ratio, showMarkers) {
+  
+  # take center of mass of dataframe
   center_lng <- (df %>% summarise(mean(longitude)))[1, 1]
   center_lat <- (df %>% summarise(mean(latitude)))[1, 1]
   
@@ -2084,6 +2051,8 @@ plot_map(df, zoom = 10, ratio = 0.05, showMarkers = F)
 
 ```
 
+The above map shows the density of listings across the entire city. A red/orange color indicates a high number of listings in that area while a blue color indicates a low density of listings. As one would expect the concentration is higher towards the center of the city and low on the outer edges. Manhattan and northern Brooklyn hold the main hot-spots in terms of listings. While there are dominant spots in the city holding most listings, one can also see that there are listing all over the city offering stays for all parts of New York. In the context of market segmentation it could be beneficial to have a more spread out offer over a bigger area of the city. In that case the above map holds valuable information considering less occupied parts of the city and could be used for identifying them. Since the map shows the offer that AirBnB generates in the city, one can also derive where the most effective spots to generate demand might be. In terms of physical marketing in the city, we would recommend focusing on the areas with high density such as lower Manhattan and upper Brooklyn. Additionally, we would recommend prioritizing listings from these areas in the recommendation system of the app and website, to increase the chances of users finding a suitable listing in a short time. Nevertheless, this map just shows a rough overview over the entire city. For a more detailed analysis we will, in the following, consider every respective neighbourhood group of the city.
+
 ### Manhattan
 
 ```{r}
@@ -2095,36 +2064,7 @@ plot_map(manhattan, 11.5, ratio = 0.02, showMarkers = T)
 
 ```
 
-### Bronx
-
-```{r}
-
-bronx <- df %>%
-  filter(neighbourhood_group == "Bronx")
-
-plot_map(bronx, 11.5, ratio = 0.01, showMarkers = T)
-
-```
-
-### Queens
-
-```{r}
-
-queens <- df %>%
-  filter(neighbourhood_group == "Queens")
-
-plot_map(queens, 12, ratio = 0.02, showMarkers = T)
-
-```
-
-```{r}
-
-staten_island <- df %>%
-  filter(neighbourhood_group == "Staten Island")
-
-plot_map(staten_island, 12, ratio = 0.05, showMarkers = T)
-
-```
+As previous analysis showed Manhattan is the most critical neighbourhood group in the dataset. It is the most popular in terms of listings and also contains the most expensive listings. The above map shows a more detailed view on it. As one can see there are two main hot spots, one located towards the south of the district and one close to Times Square. The one close to Times Square could be explained due to its distance to Central Park, Times Square and other central points. The high density towards lower Manhattan could be explained by the higher frequency of normal apartment buildings and rooms which most likely build the center of mass for the listings. Furthermore, this specific part of Manhattan allows a short access to Williamsburg, Brooklyn and Manhattan - Bridge, connecting guest to Brooklyn and other parts of the city. When it comes to guest targeting to visit a wide range of attractions throughout New York, this part of Manhattan might offer a interesting alternative to the more expensive listings in central Manhattan.
 
 ### Brooklyn
 
@@ -2137,10 +2077,52 @@ plot_map(brooklyn, 12, ratio = 0.02, showMarkers = T)
 
 ```
 
-## Geographic distribution of room types
+As we have seen on the overview map north Brooklyn represents one of the bigger hotspots in the city. Here, a similar pattern as with lower Mahattan can be observed. This district offers a wide area and normal apartment buildings for guests, while still keeping close access to Manhattan through Williamsburg Bridge. It appears that a fairly larger group of guests are willing to sacrifice a very close distance to central Manhattan for more reasonable prices and also better access to other districts of the city. AirBnB should priorize these choke points like North Brooklyn as they offer a high potential for additional listing, due to the larger population and area. In comparison it seems that Manhattan has also used up a high degree of its potential offerings.
+
+### Bronx
 
 ```{r}
 
+bronx <- df %>%
+  filter(neighbourhood_group == "Bronx")
+
+plot_map(bronx, 11.5, ratio = 0.01, showMarkers = T)
+
+```
+
+The Bronx is located to the north of Manhattan. While it offers somewhat close access to the aforementioned hotspots in Manhattan, it is also isolated from the rest of the city. Due to this, the most popular areas in the Bronx are located to the south and near the Yankee stadium. There could also be a group of guest that specifically rent out listings for nigt stays after a Yankee games. To stimulate this group, we would suggest promoting the listings which can be seen close to the Yankee Stadium on game days.
+
+### Queens
+
+```{r}
+
+queens <- df %>%
+  filter(neighbourhood_group == "Queens")
+
+plot_map(queens, 11.5, ratio = 0.02, showMarkers = T)
+
+```
+
+Queens is the biggest neighbourhood group in terms of area. The map above shows that a very small range of the potential are in Queens is actually occupied with listings. Most listings are grouped up towards the north of Queens, close to Queensboro Bridge. Furthermore, Queens offers a close access to LaGuardia airport which is also benefitial to the average AirBnB guest.
+
+```{r}
+
+staten_island <- df %>%
+  filter(neighbourhood_group == "Staten Island")
+
+plot_map(staten_island, 12, ratio = 0.05, showMarkers = T)
+
+```
+
+Staten Island offers the smallest amount of listings in the dataset. Similarly, to Queens a large amount of its area remains unused for listings. While their is a harbour offering a ferry to Manhattan and other parts of the city, this mode of transportation is probably not suitable for the average trip through the city due to its cost and speed. We would recommend, giving an overall lower priority to this neighbourhood group when it comes to user recommendations, unless a specific interest in the access to the New York Bay can be deternined.
+
+## Geographic distribution of room types
+
+While the previous maps have shown the density of listings throughout the city, they did not offer further information regarding the listing, such as its room type and other relevant information. This section attempts to address these shortcomings and analyse further geographical patterns.
+
+```{r}
+
+# plots a cluster map which groups observations together in distinct areas and labels them with the count of observations in that area
 plot_cluster_map <- function(df, zoom) {
   center_lng <- (df %>% summarise(mean(longitude)))[1, 1]
   center_lat <- (df %>% summarise(mean(latitude)))[1, 1]
@@ -2155,8 +2137,52 @@ plot_cluster_map <- function(df, zoom) {
 
 ```
 
+### Private room
+
 ```{r}
 
+private_room <- df %>%
+  filter(room_type == "Private room")
+
+plot_cluster_map(private_room, 10)
+
+```
+
+The above map shows the distribution of observations listed as private rooms in the dataset. When hovering over the counts, one can see the area that is being considered for the aggregation and when zoomed in, singular listings can be observed with their respective names. Similar to previous results, one can see that the highest grouping of listing is in the area of Manhattan and northern Brooklyn. Especially in norther Brooklyn close to Williamsburg Bridge a lot of private rooms are offered. As this coincides with the distribution we observed in the previous chapter in Brooklyn, this further supports the suspicion that a high amount of apartment building are located in that area, that allow such a high offer. As this seems to be one of the most critical points of AirBnB operations in the city next to Manhattan, we would suggest sponsoring the activity in this area with marketing and through recommendations in the app and website.
+
+### Entire home
+
+```{r}
+
+entire_home <- df %>%
+  filter(room_type == "Entire home/apt")
+
+plot_cluster_map(entire_home, 10)
+
+```
+
+The picture of listings counting entire homes and apartements offers a similar but slightly different result. While the main hotspot is always lower Manhattan and northern Brooklyn this time the center of mass is located in lower Manhattan instead of Brooklyn. This is somewhat surprising to us as Brooklyn offers a wider area and one would expect a larger offer of entire apartments or buildings there instead of Manhattan which has a smaller area. We would recommend investigating this area of northern Brooklyn more and identifying why the distribution in comparison to private rooms is shifted so much. As a result one might be able to detect neighbourhoods that offer potential for additional listings in the category of entire apartments or buildings. This could also generate additional listings close to Manhattan that are in a lower price range, leading to a potentially more diversified market and more guests.
+
+### Shared room
+
+```{r}
+
+shared_room <- df %>%
+  filter(room_type == "Shared room")
+
+plot_cluster_map(shared_room, 10)
+
+```
+
+The general distribution of shared rooms does not differ much from the one of other room types. It seems that in general listings of every type are present throughout every area of the city and and a sufficient diversity exists in that regard to satisfy most guests. An interesting observation we would like to point out in the above map is the high number of shared rooms close to Times Square on 9th avenue crossing 51st St. We would recommend further investigating why there are over 60 listings of private rooms in that specific area as it might hold insights for the preferences of host of such housing.
+
+## Other interesting maps
+
+In this section we target to shed light on geographical insights that could not be explored in the previous sections due to the type of map used. For this reason we employ a map which maps out every single observation with its own icon on the map. Observations with a green icon showing a room indicate listing of the type "Private room", listings of the type "Entire house/app" are indicated with a red and yellow house. Lastly, private rooms are shown with a 
+
+```{r}
+
+# plots the observations in the given data frame on a map by showing a marker for each observation, where the icon of the marker corresponds to the room type of the observation
 plot_room_type_map <- function(df, zoom) {
   center_lng <- (df %>% summarise(mean(longitude)))[1, 1]
   center_lat <- (df %>% summarise(mean(latitude)))[1, 1]
@@ -2176,18 +2202,36 @@ plot_room_type_map <- function(df, zoom) {
         paste("Price: ", price, "$"),
         paste("#Reviews: ", number_of_reviews),
         paste("Review age: ", last_review_age, "days"),
-        paste("Availability: ", availability_365, "days")
+        paste("Availability: ", availability_365, "days"),
+        paste("Host name: ", host_name)
       )
     )
 }
 
 ```
 
+### Highest earnings
+
+```{r}
+
+plot_room_type_map(
+  df %>% 
+    arrange(desc(lowest_monthly_earnings)) %>% 
+    head(50),
+  11
+)
+
+```
+
+Above one can see the top 50 listings in terms of lowest monthly earnings. The most noticeable aspect of this map is that most of these listings are entire houses or apartments. Furthermore, most of them are located in lower Manahattan with some scarce listings towards central Manhattan. When considering the profit of AirBnB these are the highest value listings. The goal should be to transform every other listings to be more like these ones. Since we have seen that lower Manhattan already contains a large number of listings, we would recommend to focus less on the creation of new listings in that area and focus more on improving its quality. For this we would recommend conducting surveys with the host of the listing seen above and inquire about what makes their listings so successful and applying this feedback for listings in the same area.  The listings located further away from the center are especially interesting as these areas have a lower concentration of listings. For these areas we would recommend focusing on creating new listing opportunities through marketing and communication with potential listing providers. We would also recommend contacting hosts of listings such as e.g. "The St. Johns: A 5-Bedroom Townhouse Near the Park" and inquire whether they have additional rooms or apartments they would be willing to rent out.
+
+### Highest review
+
 ```{r}
 
 highest_review <- df %>%
   arrange(desc(number_of_reviews)) %>%
-  head(100)
+  head(50)
   
 plot_room_type_map(
   highest_review, 
@@ -2196,104 +2240,20 @@ plot_room_type_map(
 
 ```
 
-```{r}
+This map shows the 100 listings with the highest number of reviews in the dataset. While similar clusters to previous analysis can be seen, an interesting pattern are the two groups close to the LaGuardia and JFK airport. It seems that guest are very adamant about leaving reviews for accommodations near the airport. Furthermore, this might indicate that these listings are booked very often and thus represent an important income stream for AirBnb. As there is a low density of listings in both of these areas as can be seen in previous heatmaps, these areas could present an opportunity for additional high value listings.
 
-plot_room_type_map(df %>% filter(price_bin == "0-50") %>% arrange(desc(number_of_reviews)) %>% head(500), 11)
-
-```
-
+### Cheap listings with high reviews
 
 ```{r}
 
-plot_room_type_map(df %>% filter(price_bin == "1001+", number_of_reviews != 0) %>% arrange(last_review_age) %>% head(500), 11)
+plot_room_type_map(
+  df %>% 
+    filter(price_bin == "0-50") %>% 
+    arrange(desc(number_of_reviews)) %>% 
+    head(300), 
+  11
+)
 
 ```
 
-
-```{r}
-
-plot_room_type_map(df %>% arrange(desc(number_of_reviews)) %>% head(10), 11)
-
-```
-
-```{r}
-
-plot_room_type_map(df %>% arrange(availability_365) %>% head(200), 11)
-
-```
-
-
-### Private room
-
-```{r}
-
-private_room <- df %>%
-  filter(room_type == "Private room")
-
-plot_cluster_map(private_room, 10)
-
-```
-
-### Entire home
-
-```{r}
-
-entire_home <- df %>%
-  filter(room_type == "Entire home/apt")
-
-plot_cluster_map(entire_home, 10)
-
-```
-
-### Shared room
-
-```{r}
-
-shared_room <- df %>%
-  filter(room_type == "Shared room")
-
-plot_cluster_map(shared_room, 10)
-
-```
-
-
-
-## Most expensive listing position
-
-```{r}
-
-plot_marker_map <- function(df, zoom, color) {
-  center_lng <- (most_expensive %>% summarise(mean(longitude)))[1, 1]
-  center_lat <- (most_expensive %>% summarise(mean(latitude)))[1, 1]
-
-  df %>%
-    leaflet() %>%
-    addTiles() %>%
-    addProviderTiles(providers$OpenStreetMap.DE) %>%
-    setView(center_lng, center_lat, zoom) %>%
-    addCircleMarkers(lng = ~longitude, lat= ~latitude, label = ~name, color = color)
-}
-
-```
-
-## Cheapest listings position
-
-```{r}
-
-most_expensive <- df %>%
-  arrange(desc(price)) %>%
-  head(10)
-
-plot_marker_map(most_expensive, 11, "red")
-
-```
-
-```{r}
-
-least_expensive <- df %>%
-  arrange(price) %>%
-  head(10)
-
-plot_marker_map(least_expensive, 11, "blue")
-
-```
+Cheap listings have been disregarded a little throughout this analysis. An interesting cluster of cheap listings are those that also hold a high number of reviews. Such listings can be seen above. The first striking aspect of this map is that in contrast to the listings with the highest earnings, one can identify way more private and shared room listings. These are most likely listings offered for tourist that have a short stay in the city and do not have a reason to commit to an entire apartment or house. Most of the listings of this type are located in brooklyn and near the airports LaGuardia and JFK. While these listings might not be the most valuable in the dataset, we would still recommend including them in the strategy for AirBnB as they make up a steady income stream.

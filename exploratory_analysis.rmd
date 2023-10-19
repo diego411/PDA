@@ -1580,13 +1580,13 @@ We will now calculate the lowest monthly earnings of NYC as a whole.
 ```{r}
 
 # sort data based on earnings
-sorted_earnings <- earnings_df[order(earnings_df$lowest_monthly_earnings), ]
+earnings_df <- earnings_df[order(earnings_df$lowest_monthly_earnings), ]
 
 # Calculate cumulative earnings
-sorted_earnings$cumulative_earnings <- cumsum(sorted_earnings$lowest_monthly_earnings)
+earnings_df$cumulative_earnings <- cumsum(earnings_df$lowest_monthly_earnings)
 
 # view NYC's monthly earnings
-cumulated_earnings <- max(sorted_earnings$cumulative_earnings)
+cumulated_earnings <- max(earnings_df$cumulative_earnings)
 cumulated_earnings
 
 ```
@@ -1602,33 +1602,67 @@ cumulated_earnings_0.5 <- cumulated_earnings / 2
 cumulated_earnings_0.5
 
 # identify percentile at which cumulated monthly earnings are equal
-q_earnings_halfcut <- ecdf(sorted_earnings$cumulative_earnings)(cumulated_earnings_0.5)
+q_earnings_halfcut <- ecdf(earnings_df$cumulative_earnings)(cumulated_earnings_0.5)
 
 # create vector indicating position in earnings distribution
-q_value_halfcut <- quantile(sorted_earnings$lowest_monthly_earnings, probs = q_earnings_halfcut)
-quantile_indicator <- ifelse(sorted_earnings$lowest_monthly_earnings > q_value_halfcut , "upper 4%", "lower 96%")
-sorted_earnings <- cbind(sorted_earnings, quantile_indicator)
+q_value_halfcut <- quantile(earnings_df$lowest_monthly_earnings, probs = q_earnings_halfcut)
+quantile_indicator <- ifelse(earnings_df$lowest_monthly_earnings > q_value_halfcut , "upper 6%", "lower 94%")
+earnings_df <- cbind(earnings_df, quantile_indicator)
+
+```
+
+Having done the calculation, we continue with description.
+We also want to (in general terms at least) identify what is causing the high earnings.
+
+```{r}
 
 # prepare data for plotting
-earningsplot_df <- sorted_earnings %>%
+earningsplot_df <- earnings_df %>%
   group_by(quantile_indicator) %>%
-  summarise(tot_earnings_mio = (sum(lowest_monthly_earnings)/1000000))
+  summarise(
+    tot_earnings_mio = (sum(lowest_monthly_earnings)/1000000),
+    count = n(),
+    mean_earnings = mean(lowest_monthly_earnings),
+    mean_price = mean(price),
+    mean_monthly_reviews = mean(reviews_per_month),
+    mean_min_nights = mean(minimum_nights),
+    mean_review_count = mean(number_of_reviews),
+    mean_review_age = mean(last_review_age))
+earningsplot_df
 
+# draw barplot
 earningsplot_df %>%
   ggplot(aes(quantile_indicator, tot_earnings_mio)) +
   geom_bar(stat = "identity") +
   geom_text(aes(label = sprintf("%.2f", earningsplot_df$tot_earnings_mio)), vjust = -0.5, size = 3) +
   scale_y_continuous(breaks = seq(0, max(earningsplot_df$tot_earnings_mio), by = 3)) +
   labs(
-    title = "Cumulated Earnings of upper 4% and lower 96% of Monthly Earnings Distribution",
+    title = "Cumulated Earnings of upper 6% and lower 94% of Monthly Earnings Distribution",
     y = "Cumulated Lowest Monthley Earnings in Mio",
     x = NULL
   )
+
+# draw piechart
+earningsplot_df %>%
+  ggplot(aes(x = "", y = tot_earnings_mio, fill = quantile_indicator)) +
+  geom_bar(stat = "identity",
+           show.legend = FALSE) +
+  coord_polar("y") +
+  labs(title = "Cumulated Monthly Earnings of upper 6% and lower 94%") +
+  theme_void() + 
+  geom_text(aes(label = paste0(quantile_indicator, "\n",
+                               sprintf("%.1f", tot_earnings_mio), " Mio",
+                               "\n", "n = ", count)), 
+            position = position_stack(vjust = 0.5))
+
 # ggsave("tot_earn_by_distribution.pdf")
 
 ```
 
 The highest 4% in the earnings distribution earn as much as the 96% below them.
+Expressed in total numbers, the highest-performing 2388 listings generated monthly earnings equal to the remaining 36417 listings. 
+
+Examining average characteristics determining earnings conveys that hosts profit from a high utilization rate. 
 
 ```{r}
 # examine how much each neighbourhood group earns and the share of room types for each

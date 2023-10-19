@@ -2152,6 +2152,8 @@ plot_map(queens, 11.5, ratio = 0.02, showMarkers = T)
 
 Queens is the biggest neighbourhood group in terms of area. The map above shows that a very small range of the potential are in Queens is actually occupied with listings. Most listings are grouped up towards the north of Queens, close to Queensboro Bridge. Furthermore, Queens offers a close access to LaGuardia airport which is also benefitial to the average AirBnB guest.
 
+### Staten Island
+
 ```{r}
 
 staten_island <- df %>%

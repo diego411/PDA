@@ -315,19 +315,19 @@ This adds a column to the dataframe with the count of characters in a listing's 
  
 ```{r}
 # Count characters of name (without spaces )
-airbnb_df$name_length <- nchar(str_replace_all(airbnb_df$name, " ", "")) 
-summary(airbnb_df$name_length)
+df$name_length <- nchar(str_replace_all(df$name, " ", "")) 
+summary(df$name_length)
 ```
 
 Plot the number of characters in histogram using bins of size 10: 
 
 ```{r}
 # Create bin labels
-bin_labels = seq(0, max(airbnb_df$name_length), 10)
+bin_labels = seq(0, max(df$name_length), 10)
 labels <- paste0("  ",bin_labels, "-", bin_labels + 9, "  ")
 
 #Create histogram
-airbnb_df %>%
+df %>%
   ggplot( mapping = aes( x=name_length )) +
   geom_histogram(binwidth = 10)  +
   stat_bin(
@@ -351,10 +351,10 @@ While there are a few outliers (which we look at below), most names fall between
 Let's look at the top ten percent longest names (>42) and the shortest ten percent (<20): 
 
 ```{r}
-quantile(airbnb_df$name_length, 0.10)
-quantile(airbnb_df$name_length, 0.90)
-airbnb_df %>% filter(name_length > 42)
-airbnb_df %>% filter(name_length < 20)
+quantile(df$name_length, 0.10)
+quantile(df$name_length, 0.90)
+df %>% filter(name_length > 42)
+df %>% filter(name_length < 20)
 ```
 
 Shorter names are often not very informational, while the longer names have almost too much information. 
@@ -365,7 +365,7 @@ Make length of name into a factor (short, medium, long):
 
 ```{r}
 # Create three categories for the length of a name and assign a category to each listing
-airbnb_df <- airbnb_df %>% 
+df <- df %>% 
   mutate(name_category = cut(name_length, 
                         breaks = c(0, 20, 42, 151),
                         labels = c("short", "medium", "long"),
@@ -376,7 +376,7 @@ Now we look at a listing's name length and the number of reviews a listing recei
 
 ```{r}
 # Create a basic boxplot
-ggplot(airbnb_df, aes(x = name_category, y = log_reviews_per_month)) +
+ggplot(df, aes(x = name_category, y = log_reviews_per_month)) +
   geom_boxplot() +
   labs(
     title = "Reviews per month by length of name",
@@ -396,10 +396,10 @@ We now identify those listings and then introduce a new categorical (factor) var
 
 ```{r}
 # Count the number of uppercase characters in each name
-airbnb_df$upper_case_count <-str_count(airbnb_df$name, "[A-Z]")
+df$upper_case_count <-str_count(df$name, "[A-Z]")
 # Create a new variable is_upper_case if upper_case_count is the same as the name_length
-airbnb_df <- airbnb_df %>% mutate(is_upper_case = ifelse(name_length == upper_case_count, 1, 0)) %>% mutate(is_upper_case = as.factor(is_upper_case))
-airbnb_df %>% filter(is_upper_case == 1) %>% count()
+df <- df %>% mutate(is_upper_case = ifelse(name_length == upper_case_count, 1, 0)) %>% mutate(is_upper_case = as.factor(is_upper_case))
+df %>% filter(is_upper_case == 1) %>% count()
 ```
 
 There are 538 listings where the name contains upper case letters only. 
@@ -410,9 +410,9 @@ An initial look at the data showed that there are some listings in languages oth
 
 ```{r}
 # Detect and assign a language
-airbnb_df <- airbnb_df %>% mutate(name_language = detect_language(text = name)) 
+df <- df %>% mutate(name_language = detect_language(text = name)) 
 # Count the occurences and order them by frequency 
-airbnb_df %>% count(name_language) %>% arrange(desc(n))
+df %>% count(name_language) %>% arrange(desc(n))
 ```
 
 38 different languages (37 and NA) were detected, with the vase majority of listings being English. For now, we concentrate on the differentiation between English and not English.
@@ -422,9 +422,9 @@ For this, we create another variable:
 
 ```{r}
 # Replace N/A values for the next operation 
-airbnb_df$name_language <- airbnb_df$name_language %>% replace_na('')
+df$name_language <- df$name_language %>% replace_na('')
 # Create a new variable (factor) that shows whether the language of listing is English or not
-airbnb_df <- airbnb_df %>% mutate(is_english = ifelse(name_language == "en", 1, 0)) %>% mutate(is_english = as.factor(is_english))
+df <- df %>% mutate(is_english = ifelse(name_language == "en", 1, 0)) %>% mutate(is_english = as.factor(is_english))
 ```
 
 ## Earnings
@@ -1061,7 +1061,7 @@ Then, we get the most common words used in the listing's names and create a word
 
 ```{r}
 # Create a Corpus
-text <- Corpus(VectorSource(airbnb_df$name))
+text <- Corpus(VectorSource(df$name))
 
 # Convert all characters to lowercase, remove punctuation and common English stopwords (e.g., "and", "the", "of")
 text <- tm_map(text, content_transformer(tolower))
@@ -1108,13 +1108,13 @@ wordcloud(words=top_150$word, freq=top_150$freq, min.freq=1, max.words=150, rand
 
 
 ```{r}
-results <- airbnb_df %>%
+results <- df %>%
   group_by(host_id) %>%
   count(host_name) %>%
   ungroup() %>%
   arrange(desc(n)) 
 
-top_hosts <- unique(airbnb_df[airbnb_df$calculated_host_listings_count > 50, c("host_name", "host_id", "calculated_host_listings_count")])
+top_hosts <- unique(df[df$calculated_host_listings_count > 50, c("host_name", "host_id", "calculated_host_listings_count")])
 
 top_hosts %>%
   ggplot(mapping = aes(x = host_name, y = calculated_host_listings_count)) +
@@ -1122,20 +1122,20 @@ top_hosts %>%
   labs(title = "Top Hosts with Calculated Listings Count > 50", x = "Host Name", y = "Calculated Listings Count") +
    theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-quantile(airbnb_df$calculated_host_listings_count, 0.95)
+quantile(df$calculated_host_listings_count, 0.95)
 ```
 
 Only 5% of listings have more than 15 listings. With this, 15 listings seem as reasonable a threshold as any to distinguish between hosts who rent on Airbnb professionally and those who do not. We've binned them into two groups (professional/casual) and compared the price (log), number of reviews (log), reviews per month (log) using box plots.
 
 ```{r}
-airbnb_df <- airbnb_df %>% 
+df <- df %>% 
   mutate(host_category = cut(calculated_host_listings_count, 
                         breaks = c(0, 15, max(calculated_host_listings_count)),
                         labels = c("professional", "casual"),
                         include.lowest = TRUE)) %>% mutate(host_category = as.factor(host_category))
 
 
-ggplot(airbnb_df, aes(x = host_category, y = log_price)) +
+ggplot(df, aes(x = host_category, y = log_price)) +
   geom_boxplot() +
   labs(
     title = "Price by Host Group",
@@ -1143,7 +1143,7 @@ ggplot(airbnb_df, aes(x = host_category, y = log_price)) +
     y = "Price"
   )
 
-ggplot(airbnb_df, aes(x = host_category, y = log_reviews_per_month)) +
+ggplot(df, aes(x = host_category, y = log_reviews_per_month)) +
   geom_boxplot() +
   labs(
     title = "Reviews per month by Host Group",
@@ -1151,7 +1151,7 @@ ggplot(airbnb_df, aes(x = host_category, y = log_reviews_per_month)) +
     y = "Revies per Month"
   )
 
-ggplot(airbnb_df, aes(x = host_category, y = log_number_of_reviews)) +
+ggplot(df, aes(x = host_category, y = log_number_of_reviews)) +
   geom_boxplot() +
   labs(
     title = "Number of Reviews by Host Group",
@@ -1159,7 +1159,7 @@ ggplot(airbnb_df, aes(x = host_category, y = log_number_of_reviews)) +
     y = "Number of Reviews"
   )
 
-ggplot(airbnb_df, aes(x = host_category, y = log(lowest_monthly_earnings))) +
+ggplot(df, aes(x = host_category, y = log(lowest_monthly_earnings))) +
   geom_boxplot() +
   labs(
     title = "Lowest monthly earnings by Host Group",
@@ -1174,11 +1174,11 @@ By looking at the data, it seems that sometimes multiple hosts are behind one ho
 ```{r}
 <<<<<<< HEAD
 # Adds logical column that indicates whether name contains " and ", "+", "/" or "&" ; ignore.case makes sure that all variations of " and " are covered
-airbnb_df$is_more_than_one_host <- grepl(" and |&|\\+|/", airbnb_df$host_name, ignore.case = TRUE)
+df$is_more_than_one_host <- grepl(" and |&|\\+|/", df$host_name, ignore.case = TRUE)
 # Adds column that contains vector of all names if is_more_than_one_host is true (more than one host)
-airbnb_df$host_names_all <- ifelse(airbnb_df$is_more_than_one_host == TRUE, strsplit(airbnb_df$host_name, "(?i) and |&| & |\\+| \\+ |/| / ", perl=TRUE), c(""))
+df$host_names_all <- ifelse(df$is_more_than_one_host == TRUE, strsplit(df$host_name, "(?i) and |&| & |\\+| \\+ |/| / ", perl=TRUE), c(""))
 # Count rows where this is the case
-nrow(airbnb_df[airbnb_df$host_names_all != '', ])
+nrow(df[df$host_names_all != '', ])
 ```
 
 Short look at how many distinct hosts this is: 

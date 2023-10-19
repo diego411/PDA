@@ -244,4 +244,3 @@ wordcloud(words=top_150$word, freq=top_150$freq, min.freq=1, max.words=150, rand
 
 
 
-

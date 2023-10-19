@@ -1306,6 +1306,166 @@ rm(text)
 
 ```
 
+## Linear regression of location and price by neighbourhood group
+
+Model 1 examines the effect of Room Type on Price. Shared Rooms are excluded due to low sample size and relative neglibility. Model 2 adds Neighbourhood Group to the regression.
+
+Since the effect of Room Type on Price might not be the same across different neighborhoods, an interaction model is added. This will analyse context effects, based on the assumption that the factors influencing how much someone is willing to pay for a particular room type are not just about the room itself but are also deeply interwoven with the characteristics and dynamics of the neighborhood in which the room is located. 
+
+This could be due to a variety of reasons. A private room in a culturally rich or safer neighborhood might command a higher price relative to the entire home/apt in a less popular neighborhood. Different neighborhoods might attract different kinds of travelers or tenants. For instance, Manhattan might attract more business travelers who prefer the privacy and convenience of an entire apartment, whereas Brooklyn might draw in younger tourists who are more open to shared spaces like private rooms. Neighborhoods also generally differ in terms of average income, cost of living, and economic activities. In more affluent areas, people might be willing to pay a premium for privacy (entire home/apt), while in more budget-conscious areas, the price difference between private rooms and entire homes might be narrower. Furthermore, in certain neighborhoods, there might be an oversupply of a particular room type, which could depress prices. In contrast, other areas might have a scarcity, driving prices up. 
+
+```{r}
+# Change reference category to Manhattan
+df$neighbourhood_group <- df$neighbourhood_group %>%
+  as.factor() %>%
+  relevel(ref = "Manhattan")
+
+# Exclude observations with 'Shared Room' in room_type
+df_sub <- df %>% filter(room_type != "Shared room")
+
+# Fit models using the subsetted data
+model_1 <- lm(log_price ~ room_type, data = df_sub)
+model_2 <- lm(log_price ~ room_type + neighbourhood_group, data = df_sub)
+model_3 <- lm(log_price ~ room_type * neighbourhood_group, data = df_sub)
+
+stargazer(model_1, model_2, model_3, type = "text",
+          title = "Regression of Price on Room Type (Excluding Shared Room) 
+          and Neighbourhood Group with Manhattan as Reference",
+          omit.stat = "f",
+          covariate.labels = c(
+            "Private",
+            "BX",
+            "BK",
+            "QN",
+            "SI",
+            "Private:BX",
+            "Private:BK",
+            "Private:QN",
+            "Private:SI"
+          ))
+
+
+# Model 1 calculations
+cat("------------ Model 1 Calculations ------------\n")
+
+# Calculate price for entire home/apt (Model 1)
+cat("Estimated average price for entire home/apt:", 
+    round(exp(coef(model_1)["(Intercept)"]), 2), "\n")
+
+# Percentage change to private room (Model 1):
+cat("Change in price for Private Room:", 
+    round((exp(coef(model_1)["room_typePrivate room"]) - 1) * 100, 2), "%\n")
+
+# Model 2 calculations
+cat("\n------------ Model 2 Calculations ------------\n")
+
+# Price for an entire home/apt in Manhattan (Model 2)
+cat("Estimated average price for entire home/apt:", 
+    round(exp(coef(model_2)["(Intercept)"]), 2), "\n")
+
+# Percentage change to private room (Model 2):
+cat("Change in price for Private Room:", 
+    round((exp(coef(model_2)["room_typePrivate room"]) - 1) * 100, 2), "%\n")
+
+# Percentage change due to different neighbourhoods compared to Manhattan)
+neighbourhoods <- c("Bronx", "Brooklyn", "Queens", "Staten Island")
+for(neighbourhood in neighbourhoods) {
+    cat("Change in price for", neighbourhood, ":", 
+        round((exp(coef(model_2)[paste0("neighbourhood_group", 
+                                        neighbourhood)]) - 1) * 100, 2), "%\n")
+}
+
+# Model 3 calculations
+cat("\n------------ Model 3 Calculations ------------\n")
+
+# Price for an entire home/apt in Manhattan (Model 3)
+cat("Estimated average price for entire home/apt:", 
+    round(exp(coef(model_3)["(Intercept)"]), 2), "\n")
+
+# Percentage change to private room (Model 3):
+cat("Change in price for Private Room:", 
+    round((exp(coef(model_3)["room_typePrivate room"]) - 1) * 100, 2), "%\n")
+
+# Percentage change due to different neighbourhoods
+for(neighbourhood in neighbourhoods) {
+    cat("Change in price for", neighbourhood, ":", 
+        round((exp(coef(model_3)[paste0("neighbourhood_group", 
+                                        neighbourhood)]) - 1) * 100, 2), "%\n")
+}
+
+# Interaction terms
+for(neighbourhood in neighbourhoods) {
+    cat("Additional change in price for Private Room in",
+        neighbourhood, ":", 
+        round((exp(coef(model_3)
+                   [paste0("room_typePrivate room:neighbourhood_group", 
+                           neighbourhood)]) - 1) * 100, 2), "%\n")
+}
+
+
+# Visualization
+# Tidy the regression results
+tidy_model_1 <- tidy(model_1)
+tidy_model_2 <- tidy(model_2)
+tidy_model_3 <- tidy(model_3)
+
+# Combine the tidied models for plotting
+combined_tidy <- bind_rows(
+  tidy_model_1 %>% mutate(model = "Model 1"),
+  tidy_model_2 %>% mutate(model = "Model 2"),
+  tidy_model_3 %>% mutate(model = "Model 3")
+)
+
+# Coefficient plot
+ggplot(combined_tidy, aes(x = term, y = estimate, color = model)) +
+  geom_point(position = position_dodge(width = 0.5), size = 3) +
+  geom_errorbar(aes(ymin = estimate - std.error, ymax = estimate + std.error),
+                position = position_dodge(width = 0.5), width = 0.2) +
+  coord_flip() +  # makes it horizontal
+  labs(
+    title = "Coefficient Plot for Model 1, Model 2, and Model 3",
+    y = "Coefficient Estimate",
+    x = ""
+  ) +
+  scale_color_manual(values = c("Model 1" = "blue", "Model 2" = "red", 
+                                "Model 3" = "green")) +
+  scale_x_discrete(labels = c(
+    "(Intercept)" = "Constant",
+    "room_typePrivate room" = "Private",
+    "neighbourhood_groupBronx" = "BX",
+    "neighbourhood_groupBrooklyn" = "BK",
+    "neighbourhood_groupQueens" = "QN",
+    "neighbourhood_groupStaten Island" = "SI",
+    "room_typePrivate room:neighbourhood_groupBronx" = "Private:BX",
+    "room_typePrivate room:neighbourhood_groupBrooklyn" = "Private:BK",
+    "room_typePrivate room:neighbourhood_groupQueens" = "Private:QN",
+    "room_typePrivate room:neighbourhood_groupStaten Island" = "Private:SI"
+  ))
+
+
+```
+
+### Model 1
+The constant of 5.141 indicates the expected log price for an entire home/apartment. This amounts to an average price of $170.88 for an Airbnb listing in New York City. The coefficient of -0.845 for private room suggests that private rooms are associated with a price that is approximately 57.04% lower than entire homes/apartments, on average.
+
+### Model 2
+The constant indicates that the expected mean price for an entire home/apartment located in Manhattan is $202.5. In this model, the coefficient for private rooms is -0.781, indicating that in Manhattan, private rooms are associated with a price that is approximately 54.2% lower than entire homes/apartments.
+
+The prices in the Bronx are approximately 41.96% lower than in Manhattan, regarding entire homes/apartments. Brooklyn listings have log prices that are 0.324 units lower than those in Manhattan, or about 27.7% lower. Queens listings have log prices that are approximately 0.436 units lower than Manhattan listings. This translates to around 35.3% lower prices. Prices in Staten Island are 0.520 units lower in the log scale than Manhattan or about 40.6% lower in actual terms. The negative impact on price of renting out private rooms is added on top of these changes for each neighbourhood.
+
+### Model 3
+The constant in this model is nearly identical to Model 2, the coefficient for private room is slightly smaller. The coefficients for the neighbourhood_groups also remain similar to those in Model 2.
+
+The coefficient for the interaction between Private Room and Bronx of 0.097 suggests that the price reduction associated with private rooms is somewhat attenuated in the Bronx. Specifically, while private rooms are cheaper than entire homes, in the Bronx this difference is approximately 10.2 % less pronounced than in Manhattan. In addition, the negative effect on price of an apartment being listed in the Bronx is less pronounced for private rooms than for entire apartments. 
+
+In Brooklyn, private rooms are even cheaper compared to entire homes. Though significant, this difference is only in the lower single-digit percentage range. Queens shows the opposite trend of similar magnitude. The interaction term for Staten Island is quite small and does not reach significance at the p = 0.05 threshold.
+
+### Model Fit
+Model 1 explains 37.5% of the variance in log_price with only room type as the predictor. Including neighbourhood groups in Model 2 improves the R^2 to 45.4%. This indicates that the neighbourhood group does have substantial explanatory power. Models 2 and 3 explain the same amount of variance in the price. While Model 3 has more predictors due to the interaction terms (room type combined with neighborhood), it doesn't enhance explanatory power.
+
+### Conclusion
+From the regression models, it's evident that property type and neighborhood significantly impact pricing. Private rooms consistently fetch lower prices than entire homes or apartments, with the magnitude of this difference influenced by the neighborhood. For instance, while private rooms are generally cheaper, this difference is less pronounced in the Bronx and Queens and more pronounced in Brooklyn compared to Manhattan. This interaction implies that a "one-size-fits-all" approach might not be optimal when setting prices, as various factors play off each other in influencing the final listing price. On the other hand, all neighborhoods examined have lower average prices than Manhattan, with Staten Island and the Bronx exhibiting the most significant reductions.
+
 # Natural Language Processing
 
 ```{r}

@@ -1,0 +1,247 @@
+---
+title: "airbnb_name_analysis"
+output: html_document
+date: "2023-10-14"
+---
+
+Set up workspacce. 
+
+```{r setup, include=FALSE}
+rm(list=ls())
+```
+
+Load required packages. 
+
+```{r}
+require(tidytext)
+require(wordcloud)
+require(tm)
+```
+
+
+```{r}
+airbnb_df <- read.csv("airbnb_clean.csv", header=TRUE)
+```
+
+#Feature Engineering
+
+This adds a column to the dataframe with the count of characters in a listing's name after having removed the spaces: 
+
+```{r}
+# Count characters of name (without spaces )
+airbnb_df$name_length <- nchar(str_replace_all(airbnb_df$name, " ", "")) 
+summary(airbnb_df$name_length)
+```
+
+
+Get average number of characters, median, maximum and minimum:
+
+```{r}
+avg_name_length <- mean(airbnb_df$name_length)
+median_name_length <- median(airbnb_df$name_length)
+minimum_name_length <- min(airbnb_df$name_length)
+maximum_name_length <- max(airbnb_df$name_length)
+```
+The minimum number of characters is 0, which suggests that there are listings without a name. The mean and median are very close (31,76 to 32) which indicates that the distribution could be (close to) symmetrical. The longest name having 151 characters seems to be an outlier. 
+
+
+Plot number of characters in histogram using bins of size 10: 
+
+```{r}
+# Create bin labels
+bin_labels = seq(0, max(airbnb_df$name_length), 10)
+labels <- paste0("  ",bin_labels, "-", bin_labels + 9, "  ")
+
+#Create histogram
+airbnb_df %>%
+  ggplot( mapping = aes( x=name_length )) +
+  geom_histogram(binwidth = 10)  +
+  stat_bin(
+    binwidth = 10,
+    geom = 'text',
+    aes(label = after_stat(count)),
+    vjust = -0.5,
+    size = 3,
+    color = "black"
+  ) +
+  labs( title = "How long are the names of AirBnB listings?",
+        x = "Number of characters in listing's name", 
+        y = "Frequency") +
+  scale_x_continuous(breaks = bin_labels, labels=labels) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+While there are a few outliers (which we look at below), most names fall between 15 and 59 characters.
+
+
+Look at the top ten longest names (>42) and the shortest ten percent (<20): 
+
+```{r}
+
+quantile(airbnb_df$name_length, 0.10)
+quantile(airbnb_df$name_length, 0.90)
+airbnb_df %>% filter(name_length > 42)
+airbnb_df %>% filter(name_length < 20)
+
+```
+Shorter names often not very informational, while the longer names have almost too much information. 
+It could make sense to categorize the length into three bins, based on the quantiles calculated above. 
+
+Make length of name into a factor (short, medium, long): 
+
+```{r}
+# Create three categories for the length of a name and assign a category to each listing
+airbnb_df <- airbnb_df %>% 
+  mutate(name_category = cut(name_length, 
+                        breaks = c(0, 20, 43, 151),
+                        labels = c("short", "medium", "long"),
+                        include.lowest = TRUE)) %>% mutate(name_category = as.factor(name_category))
+```
+
+
+Now we look at a listing's name length and the number of reviews a listing receives per month: 
+
+```{r}
+# Create a basic boxplot
+ggplot(airbnb_df, aes(x = name_category, y = log_reviews_per_month)) +
+  geom_boxplot() +
+  labs(
+    title = "Reviews per month by length of name",
+    x = "Length of name",
+    y = "Reviews per month"
+  )
+```
+All three boxplots look very similar.
+
+#UPPER CASE USE 
+
+Another aspect that might be worth investigating is the use of upper case letters. Manual screening showed that there are some names that only consist of upper case letters which can be perceived as "screaming" on the internet. 
+
+We now identify those listings and then introduce a new categorical (factor) variable that indicates whether a name consists of only upper case letters (1) or not (0):
+
+```{r}
+# Count the number of uppercase characters in each name
+airbnb_df$upper_case_count <-str_count(airbnb_df$name, "[A-Z]")
+# Create a new variable is_upper_case if upper_case_count is the same as the name_length
+airbnb_df <- airbnb_df %>% mutate(is_upper_case = ifelse(name_length == upper_case_count, 1, 0)) %>% mutate(is_upper_case = as.factor(is_upper_case))
+airbnb_df %>% filter(is_upper_case == 1) %>% count()
+```
+There are 538 listings where the name contains upper case letters only. 
+
+```{r}
+# Create basic boxplots
+ggplot(airbnb_df, aes(x = is_upper_case, y = log_number_of_reviews)) +
+  geom_boxplot() +
+  labs(
+    title = "Reviews per month all caps or not ",
+    x = "Is all caps",
+    y = "Number of Reviews"
+  )
+```
+
+Again, we can observe very similar plots.
+
+#Language Analysis: 
+
+Initial look at the data showed that there are some listings in languages other than English. Let's detect them and see if there is any correlation to other variables.
+
+```{r}
+#install.packages("cld2")
+library(cld2)
+# Detect and assign a language
+airbnb_df <- airbnb_df %>% mutate(name_language = detect_language(text = name)) 
+# Count the occurences and order them by frequency 
+airbnb_df %>% count(name_language) %>% arrange(desc(n))
+
+
+
+
+```
+38 different languages (37 and NA) were detected, with the vase majority of listings being English. For now, we concentrate on the differentiation between English and not English.
+
+For this, we create another variable: 
+
+```{r}
+# Replace N/A values for the next operation 
+airbnb_df$name_language <- airbnb_df$name_language %>% replace_na('')
+# Create a new variable (factor) that shows whether the language of listing is English or not
+airbnb_df <- airbnb_df %>% mutate(is_english = ifelse(name_language == "en", 1, 0)) %>% mutate(is_english = as.factor(is_english))
+```
+
+```{r}
+# Create a basic boxplot
+ggplot(airbnb_df, aes(x = is_english, y = log_reviews_per_month)) +
+  geom_boxplot() +
+  labs(
+    title = "Reviews per month by Language",
+    x = "Language",
+    y = "Reviews per month"
+  )
+
+# Create a basic boxplot
+ggplot(airbnb_df, aes(x = is_english, y = log_number_of_reviews)) +
+  geom_boxplot() +
+  labs(
+    title = "Number of Reviews by Language",
+    x = "Language",
+    y = "Number of Reviews"
+  )
+```
+Again, the boxplots are very similar. The language of the listing does not seem to have influence on the number of reviews.
+
+
+#EXPLORING WHAT IS WRITTEN IN NAME
+
+Now we look at the semantics of the names. For this, we transform the names by, removing upper case letters, punctuation and stoppwords. 
+Then, we get the most common words used in the listing's names and create a word cloud.
+
+```{r}
+# Create a Corpus
+text <- Corpus(VectorSource(airbnb_df$name))
+
+# Convert all characters to lowercase, remove punctuation and common English stopwords (e.g., "and", "the", "of")
+text <- tm_map(text, content_transformer(tolower))
+text <- tm_map(text, removePunctuation)
+text <- tm_map(text, removeWords, stopwords("en"))
+
+# Create a term-document matrix
+# Rows represent terms (words) and columns represent individual entries from df$name. The values in the matrix indicate the frequency of a term in a given document.
+tdm <- TermDocumentMatrix(text)
+
+# Calculate word frequencies, sorted in decreasing order
+m <- as.matrix(tdm)
+word_freqs <- sort(rowSums(m), decreasing=TRUE) 
+
+# Create a data frame with two columns: word (the terms or words) and freq (their respective frequencies)
+dm <- data.frame(word = names(word_freqs), freq = word_freqs)
+
+# Create a basic wordcloud
+wordcloud(words=dm$word, freq=dm$freq, min.freq=1, max.words=150, random.order=FALSE)
+```
+
+Color the most commonly used words by sentiment: 
+
+```{r}
+# Get sentiments from the bing lexicon
+library(textdata)
+sentiments <- get_sentiments("bing") 
+
+# Join the sentiments with the words 
+result <- dm %>%
+  left_join(sentiments, by="word") 
+
+# Assign a color to each sentiment
+top_150 <- result %>% 
+  mutate(sentiment = ifelse(is.na(sentiment), "neutral", sentiment)) %>% 
+  mutate(color = ifelse(sentiment == "positive", "green", 
+                       ifelse(sentiment == "negative", "red", "grey"))) %>% slice(1:150) 
+
+# Create a colored wordcloud
+wordcloud(words=top_150$word, freq=top_150$freq, min.freq=1, max.words=150, random.order=FALSE, colors=top_150$color)
+
+
+```
+
+
+
+
+

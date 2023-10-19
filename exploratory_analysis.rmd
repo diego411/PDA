@@ -1621,14 +1621,26 @@ earningsplot_df <- earnings_df %>%
   group_by(quantile_indicator) %>%
   summarise(
     tot_earnings_mio = (sum(lowest_monthly_earnings)/1000000),
-    count = n(),
     mean_earnings = mean(lowest_monthly_earnings),
     mean_price = mean(price),
     mean_monthly_reviews = mean(reviews_per_month),
     mean_min_nights = mean(minimum_nights),
     mean_review_count = mean(number_of_reviews),
-    mean_review_age = mean(last_review_age))
-earningsplot_df
+    mean_review_age = mean(last_review_age),
+    count = n()
+    )
+
+# prepare data for table comparison
+earningstable_df <- earningsplot_df %>%
+    column_to_rownames(var = "quantile_indicator")
+earningstable_df$mean_review_age <- as.numeric(earningstable_df$mean_review_age)
+earningstable_df <- t(earningstable_df)
+earningstable_df <- as.data.frame(earningstable_df)
+earningstable_df$`lower 94%` <- as.numeric(earningstable_df$`lower 94%`)
+earningstable_df$`upper 6%` <- as.numeric(earningstable_df$`upper 6%`)
+earningstable_df <- earningstable_df %>%
+  mutate(q6_relative_to_q94 = `upper 6%` / `lower 94%`)
+earningstable_df <- round(earningstable_df, 2)
 
 # draw barplot
 earningsplot_df %>%
@@ -1653,16 +1665,34 @@ earningsplot_df %>%
   geom_text(aes(label = paste0(quantile_indicator, "\n",
                                sprintf("%.1f", tot_earnings_mio), " Mio",
                                "\n", "n = ", count)), 
-            position = position_stack(vjust = 0.5))
+            position = position_stack(vjust = 0.5)
+            )
 
 # ggsave("tot_earn_by_distribution.pdf")
 
+# Example kable call
+rownames(earningstable_df) <- c("Lowest Monthly Earnings",
+                                "Mean Monthly Earnings",   
+                                "Mean Price",
+                                "Mean Monthly Reviews",
+                                "Mean Minimum Nights",
+                                "Mean Review Count",
+                                "Mean Age of Last Review",
+                                "n")
+colnames(earningstable_df) <- c("lower 94%",
+                                "upper 6%",
+                                "Proportion")
+earningstable <- knitr::kable(earningstable_df, 
+      caption = "Statistics on Monthly Earnings Distribution Shares", )
+earningstable
+
 ```
 
-The highest 4% in the earnings distribution earn as much as the 96% below them.
+Accumulated, the highest 6% in the earnings distribution earn as much as the 96% below them.
 Expressed in total numbers, the highest-performing 2388 listings generated monthly earnings equal to the remaining 36417 listings. 
 
-Examining average characteristics determining earnings conveys that hosts profit from a high utilization rate. 
+Examining average characteristics determining earnings conveys that hosts may profit from a high utilization rate.
+To be more precise, although the price of highest-performing listings is 2.6 times higher compared to the average price of the remaining listings, price alone may not explain the drastic difference in monthly earnings. Rather, it is the combination of price and utilization indicators that cause higher earnings. On average, a listing of the highest-performing share in the distribution entertains almost twice as much visitors per month, and has had 1.5 times more visitors in total, while visitors are required to stay 4.4 times as long. In addition, for an average high-performing listing, only 81 days have past since the last review, whereas for an average listing of the remaining share 289 days have past. Thus, we may assume that that a listing in the highest 6% of the monthly earnings distribution has less gaps between visitors, resulting in a higher occupation rate.
 
 ```{r}
 # examine how much each neighbourhood group earns and the share of room types for each

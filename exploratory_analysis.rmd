@@ -30,6 +30,7 @@ require( tidytext )
 library( ggmap )
 library( geosphere )
 library( cld2 )
+library(knitr)
 
 ```
 
@@ -1460,10 +1461,12 @@ Examine summary statistics including range, and overview distribution of earning
 
 ```{r}
 
+# gather summary statistics
 summary(df$lowest_monthly_earnings)
 
 max(df$lowest_monthly_earnings) - min(df$lowest_monthly_earnings)
 
+#draw histogram of monthly earnings
 df %>%
   ggplot(aes(lowest_monthly_earnings)) +
   geom_histogram() +
@@ -1561,7 +1564,6 @@ earnings_df %>%
     x = NULL
   )
 
-
 ```
 
 The histogram shows that the distribution of monthly earnings is approximately normally distributed. We continue to see, however, that more listings belong to the lower half of the distribution.
@@ -1603,6 +1605,13 @@ cumulated_earnings_0.5
 
 # identify percentile at which cumulated monthly earnings are equal
 q_earnings_halfcut <- ecdf(earnings_df$cumulative_earnings)(cumulated_earnings_0.5)
+q_earnings_halfcut
+
+```
+
+The percentile at which the cumulative monthly earnings of both halfs is equal is approximately 0.94
+
+```{r}
 
 # create vector indicating position in earnings distribution
 q_value_halfcut <- quantile(earnings_df$lowest_monthly_earnings, probs = q_earnings_halfcut)
@@ -1612,7 +1621,7 @@ earnings_df <- cbind(earnings_df, quantile_indicator)
 ```
 
 Having done the calculation, we continue with description.
-We also want to (in general terms at least) identify what is causing the high earnings.
+We draw a piechart.
 
 ```{r}
 
@@ -1630,6 +1639,27 @@ earningsplot_df <- earnings_df %>%
     count = n()
     )
 
+# draw piechart
+earningsplot_df %>%
+  ggplot(aes(x = "", y = tot_earnings_mio, fill = quantile_indicator)) +
+  geom_bar(stat = "identity",
+           show.legend = FALSE) +
+  coord_polar("y") +
+  labs(title = "Cumulative Monthly Earnings of upper 6% and lower 94%") +
+  theme_void() + 
+  geom_text(aes(label = paste0(quantile_indicator, "\n",
+                               sprintf("%.1f", tot_earnings_mio), " Mio",
+                               "\n", "n = ", count)), 
+            position = position_stack(vjust = 0.5)
+            )
+
+```
+
+We also want to (in general terms at least) identify what is causing the high earnings.
+Thus, we look at mean statistics on earnings-determining variables.
+
+```{r}
+
 # prepare data for table comparison
 earningstable_df <- earningsplot_df %>%
     column_to_rownames(var = "quantile_indicator")
@@ -1642,35 +1672,7 @@ earningstable_df <- earningstable_df %>%
   mutate(q6_relative_to_q94 = `upper 6%` / `lower 94%`)
 earningstable_df <- round(earningstable_df, 2)
 
-# draw barplot
-earningsplot_df %>%
-  ggplot(aes(quantile_indicator, tot_earnings_mio)) +
-  geom_bar(stat = "identity") +
-  geom_text(aes(label = sprintf("%.2f", earningsplot_df$tot_earnings_mio)), vjust = -0.5, size = 3) +
-  scale_y_continuous(breaks = seq(0, max(earningsplot_df$tot_earnings_mio), by = 3)) +
-  labs(
-    title = "Cumulated Earnings of upper 6% and lower 94% of Monthly Earnings Distribution",
-    y = "Cumulated Lowest Monthley Earnings in Mio",
-    x = NULL
-  )
-
-# draw piechart
-earningsplot_df %>%
-  ggplot(aes(x = "", y = tot_earnings_mio, fill = quantile_indicator)) +
-  geom_bar(stat = "identity",
-           show.legend = FALSE) +
-  coord_polar("y") +
-  labs(title = "Cumulated Monthly Earnings of upper 6% and lower 94%") +
-  theme_void() + 
-  geom_text(aes(label = paste0(quantile_indicator, "\n",
-                               sprintf("%.1f", tot_earnings_mio), " Mio",
-                               "\n", "n = ", count)), 
-            position = position_stack(vjust = 0.5)
-            )
-
-# ggsave("tot_earn_by_distribution.pdf")
-
-# Example kable call
+# create statistics table
 rownames(earningstable_df) <- c("Lowest Monthly Earnings",
                                 "Mean Monthly Earnings",   
                                 "Mean Price",
@@ -1694,40 +1696,49 @@ Expressed in total numbers, the highest-performing 2388 listings generated month
 Examining average characteristics determining earnings conveys that hosts may profit from a high utilization rate.
 To be more precise, although the price of highest-performing listings is 2.6 times higher compared to the average price of the remaining listings, price alone may not explain the drastic difference in monthly earnings. Rather, it is the combination of price and utilization indicators that cause higher earnings. On average, a listing of the highest-performing share in the distribution entertains almost twice as much visitors per month, and has had 1.5 times more visitors in total, while visitors are required to stay 4.4 times as long. In addition, for an average high-performing listing, only 81 days have past since the last review, whereas for an average listing of the remaining share 289 days have past. Thus, we may assume that that a listing in the highest 6% of the monthly earnings distribution has less gaps between visitors, resulting in a higher occupation rate.
 
-```{r}
-# examine how much each neighbourhood group earns and the share of room types for each
-
-earningsplot_hood_room <- df %>%
-  group_by(neighbourhood_group, room_type) %>%
-  summarise(
-    tot_earnings_mio = (sum(lowest_monthly_earnings)/1000000),
-  )
-
-n_hood <- df %>%
-  group_by(neighbourhood_group) %>%
-  summarise(
-    count = n())
-
-earningsplot_hood_room %>%
-  ggplot(aes(x = reorder(neighbourhood_group, +tot_earnings_mio), y = tot_earnings_mio, fill = room_type)) +
-  geom_bar(stat = "identity") +
-  scale_y_continuous(breaks = seq(0, 20, by = 1)) +
-  labs(
-    title = "Total Earnings by Neighbourhood and Room Type",
-    y = "Lowest Monthly Earnings in Mio",
-    x = NULL,
-    fill = "Room Type"
-  )
-
-```
-Home-type listings in Manhattan generate the most earnings
+As we end the analysis of earnings, we clean up the workspace.
 
 ```{r}
 
-# Relationships between earnings and other variables
+# clear workspace
+rm(inf_earnings,
+   earnings_df,
+   IQR,
+   calc_upper_whisker,
+   select_upper_whisker,
+   upper_whisker,
+   calc_lower_whisker,
+   select_lower_whisker,
+   lower_whisker,
+   earnings_distribution,
+   cumulated_earnings,
+   cumulated_earnings_0.5,
+   q_earnings_halfcut,
+   q_value_halfcut,
+   quantile_indicator,
+   earningsplot_df,
+   earningstable_df,
+   earningstable,
+   inf_earnings,
+   earnings_df,
+   IQR,
+   calc_upper_whisker,
+   select_upper_whisker,
+   upper_whisker,
+   calc_lower_whisker,
+   select_lower_whisker,
+   lower_whisker,
+   earnings_distribution,
+   cumulated_earnings,
+   cumulated_earnings_0.5,
+   q_earnings_halfcut,
+   q_value_halfcut,
+   quantile_indicator,
+   earningsplot_df,
+   earningstable_df,
+   earningstable
+)
 
-df %>%
-  ggplot(aes(x = , y = log_earnings))
 ```
 
 

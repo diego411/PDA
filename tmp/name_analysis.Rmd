@@ -1,0 +1,259 @@
+---
+title: "airbnb_name_analysis"
+output: html_document
+date: "2023-10-14"
+---
+
+Set up workspacce. 
+
+```{r setup, include=FALSE}
+rm(list=ls())
+```
+
+Load required packages. 
+
+```{r}
+require(tidytext)
+require(wordcloud)
+require(tm)
+```
+
+Read dataset from working directory and gather information on basic structure of the dataset.
+TO BE DELETED DURING MERGING
+
+```{r}
+airbnb_df <- read.csv("airbnb_data.csv", header=TRUE)
+head(airbnb_df)
+nrow(airbnb_df)
+ncol(airbnb_df)
+colnames(airbnb_df)
+str(airbnb_df)
+```
+
+#Feature Engineering
+
+This adds a column to the dataframe with the count of characters in a listing's name after having removed the spaces: 
+
+```{r}
+#count characters (without )
+airbnb_df$name_length <- nchar(str_replace_all(airbnb_df$name, " ", "")) 
+```
+
+
+Get average number of characters, median, maximum and minimum:
+
+```{r}
+avg_name_length <- mean(airbnb_df$name_length)
+median_name_length <- median(airbnb_df$name_length)
+minimum_name_length <- min(airbnb_df$name_length)
+maximum_name_length <- max(airbnb_df$name_length)
+```
+The minimum number of characters is 0, which suggests that there are listings without a name. The mean and median are very close (31,76 to 32) which indicates that the distribution could be (close to) symmetrical. The longest name having 151 characters seems to be an outlier. 
+
+
+Plot number of characters in histogram using bins of size 15: 
+
+```{r}
+bin_labels = seq(0, maximum_name_length, 10)
+labels <- paste0("  ",bin_labels, "-", bin_labels + 9, "  ")
+
+airbnb_df %>%
+  ggplot( mapping = aes( x=name_length )) +
+  geom_histogram(binwidth = 10)  +
+  stat_bin(
+    binwidth = 10,
+    geom = 'text',
+    aes(label = after_stat(count)),
+    vjust = -0.5,
+    size = 3,
+    color = "black"
+  ) +
+  labs( title = "How long are the names of AirBnB listings?",
+        x = "Number of characters in listing's name", 
+        y = "Frequency") +
+  scale_x_continuous(breaks = bin_labels, labels=labels) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+While there are a few outliers (which we look at below), most names fall between 15 and 59 characters.
+Quantile berechnen
+
+
+Look at the longest names (>75) and the shortest (<15): 
+
+```{r}
+airbnb_df %>% filter(name_length > 60)
+airbnb_df %>% filter(name_length < 10)
+```
+Shorter names not very informational, while the longer names have almost too much information. 
+It could make sense to categorize the length into three bins. 
+
+
+Make length of name into a factor (short, medium, long): 
+
+```{r}
+airbnb_df <- airbnb_df %>% 
+  mutate(name_category = cut(name_length, 
+                        breaks = c(0, 9, 59, 151),
+                        labels = c("short", "medium", "long"),
+                        include.lowest = TRUE)) %>% mutate(name_category = as.factor(name_category))
+```
+
+
+Now we look at a possible correlation between a listing's name length and the number of reviews a listing receives: 
+
+```{r}
+model <- aov(airbnb_df$number_of_reviews ~ airbnb_df$name_category, data = airbnb_df)
+summary(model)
+```
+HELP: KANN DAS JEMAND INTERPRETIEREN? ChatGPT sagt signifikant. 
+
+
+#UPPER CASE USE 
+
+Another aspect that might be worth investigating is the use of upper case letters. Manual screening showed that there are some names that only consist of upper case letters which can be perceived as "screaming" on the internet. 
+
+Count the number of upper case letters in a listing's name. Then introduce a new categorical (factor) variable that indicates whether a name consists of only upper case letters (1) or not (0) and get some basic summary statistics about it: 
+
+TODO: Remove !,, and such from name length. There could be all-upper-case names that don't appear in list because they contain punctuation :D
+
+```{r}
+airbnb_df$upper_case_count <-str_count(airbnb_df$name, "[A-Z]")
+airbnb_df <- airbnb_df %>% mutate(is_upper_case = ifelse(name_length == upper_case_count, 1, 0)) %>% mutate(is_upper_case = as.factor(is_upper_case))
+airbnb_df %>% filter(is_upper_case == 1)
+airbnb_df %>% count(is_upper_case ==1)
+```
+There are 554 listings where the name contains upper case letters only. 
+
+
+Now we look at a possible correlation between a listing's name length and the number of reviews a listing receives:
+
+```{r}
+model <- aov(airbnb_df$number_of_reviews ~ airbnb_df$is_upper_case, data = airbnb_df)
+summary(model)
+
+```
+
+HELP: Wie interpretiert man das? ChatGPT sagt nicht signifikant. 
+
+#Language Analysis: 
+
+Showed some names in a different language. Let's detect them and see if there is an correlation to the number of reviews: 
+
+```{r}
+#install.packages("cld3")
+library(cld2)
+
+airbnb_df <- airbnb_df %>% mutate(name_language = detect_language(text = name)) 
+airbnb_df
+airbnb_df %>% count(name_language)
+airbnb_df$name_language <- airbnb_df$name_language %>% replace_na('')
+
+
+```
+38 different languages (37 and NA) were detected, majority english. For ease, since new york listing, we concentrate on the difference between english and no english. 
+
+```{r}
+airbnb_df <- airbnb_df %>% mutate(is_english = ifelse(name_language == "en", 1, 0)) 
+```
+
+Let's see if there is any correlation between the number of reviews and the language of the listing: 
+
+```{r}
+model_language <- aov(airbnb_df$number_of_reviews ~ airbnb_df$is_english, data = airbnb_df)
+summary(model_language)
+```
+HELP: What does this mean: In other words, there is evidence to suggest that the "is_english" variable is associated with the numeric variable.
+
+
+---------- Bis hier ist (fast) alles ready -----------
+
+#EXPLORING WHAT IS WRITTEN IN NAME
+
+Now we look at what was written in the name of a listing instead of just the "look". 
+
+
+Get the most common words used in the listing's names: 
+
+```{r}
+names <- airbnb_df$name 
+per_line <- data.frame(id=airbnb_df$id, text = airbnb$name, stringsAsFactors = 
+                   FALSE)
+new <- per_line %>% unnest_tokens(word, text)
+words_per_line <- per_line %>% left_join(new, by = "id")
+words_per_line <- words_per_line %>% left_join(airbnb_df, by = 'id') %>% dplyr::select('id', 'name', 'word')
+words_per_line
+
+```
+Create a word cloud with the top 100 most commonly used words in names:
+(Not very insightful)
+
+```{r}
+library(tm)
+library(wordcloud)
+new %>% count(word, sort = TRUE) %>% with(wordcloud(word, n, max.words = 100))
+```
+
+Create a word cloud with the top 100 most commonly used words in names after having removed stopwords:
+
+```{r}
+new <-  anti_join(new, get_stopwords())
+new %>% count(word, sort= TRUE) %>% with(wordcloud(word, n, max.words = 100))
+```
+Count the most commonly used positive words:
+
+```{r}
+#install.packages("textdata")
+library(textdata)
+positive <- get_sentiments("nrc") %>%
+  filter(sentiment == "positive")
+
+new %>%
+  semi_join(positive) %>%
+  count(word, sort = TRUE)
+```
+Count the most commonly used negative words: 
+
+```{r}
+negative <- get_sentiments("bing") %>%
+  filter(sentiment == "negative")
+
+new %>%
+  semi_join(negative) %>%
+  count(word, sort = TRUE)
+```
+Show the top 150 words by sentiment: 
+
+```{r}
+sentiments <- get_sentiments("nrc")
+
+
+library(wordcloud2)
+top_150 <- new %>% count(word, sort= TRUE) %>%
+  left_join(sentiments) %>% 
+  mutate(sentiment = ifelse(is.na(sentiment), "neutral", sentiment)) %>% 
+  mutate(color = ifelse(sentiment == "positive", "green", 
+                       ifelse(sentiment == "negative", "red", "grey"))) %>% slice(1:100) 
+
+
+
+wordcloud2(top_150, size=1, color=top_150$color)
+
+
+```
+
+
+Get the "most positive" listings:
+
+```{r}
+total_name_sentiment <- words_per_line %>% left_join(sentiments) %>% mutate(sentiment = ifelse(is.na(sentiment),"neutral", sentiment)) %>% group_by(id) %>%summarize(sentiment_total = sum(sentiment =="positive")) %>% arrange(desc(sentiment_total))
+total_name_sentiment
+```
+See if correlation of positive listing with availability, number of reviews, reviews per motnh
+No 
+
+```{r}
+airbnb_df <- left_join(airbnb_df, total_name_sentiment, by="id")
+cor(airbnb_df$sentiment_total, airbnb_df$reviews_per_month)
+```
+
+

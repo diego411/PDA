@@ -101,7 +101,7 @@ At least 50 % of hosts offer only one listing, with some hosts offering up to 32
 Listings are in part not available for rent at all, the median availability is 45 days out of the 365 days in a year.
 
 ## Location
-```{r}
+```{r warning=FALSE, message=FALSE}
 cat("Number of unique neighbourhood groups:", 
     length(unique(df$neighbourhood_group)), "\n")
 
@@ -451,7 +451,7 @@ df <- df %>%
 
 Generate kernel density estimates for each variable in the dataframe to assess their distributions.
 
-```{r}
+```{r warning=FALSE, message=FALSE}
 
 plot_distributions <- function(df) {
   plots <- lapply(names(df), function(var) {
@@ -471,7 +471,7 @@ plot_distributions(df_sample)
 
 Log transforme skewed distributions.
 
-```{r}
+```{r warning=FALSE, message=FALSE}
 
 df_log <- df %>%
   mutate(
@@ -495,6 +495,7 @@ Save the modified data to the dataframe.
 ```{r}
 
 df <- df_log
+rm( df_log )
 
 ```
 
@@ -537,7 +538,7 @@ Since there are only 11 listings with a price of zero, we assume this is a data 
 
 ```{r}
 
-df <- df_non_zero_price <- df %>% 
+df <- df %>% 
   filter(price != 0)
 
 ```
@@ -645,7 +646,8 @@ nrow(get_duplicates_by_columns(df, c("id")))
 
 get_duplicates_by_columns(df, c("name")) %>%
   select(id, name, host_name, neighbourhood, price) %>%
-  arrange(desc(name))
+  arrange(desc(name)) %>%
+  head(10)
 
 ```
 There are a lot of duplicate names in the dataset. Most of the time these listings seem to be from the same host. However, the listings seem to always differ in the neighbourhood or in the price. This will be further analysed in the following.
@@ -666,7 +668,8 @@ As one can see there are no listings with the same name that are also at the sam
 
 get_duplicates_by_columns(df, c("longitude", "latitude")) %>%
   select(id, name, host_name, longitude, latitude) %>%
-  arrange(desc(latitude))
+  arrange(desc(latitude)) %>%
+  head(10)
 
 ```
 There are some listings that are at the exact same position. However, they more often than not have a different host or name and in every case a different price. Thus, we will not drop these entries and consider them in our analysis.
@@ -946,8 +949,12 @@ Let's look at the top ten percent longest names (>42) and the shortest ten perce
 ```{r}
 quantile(df$name_length, 0.10)
 quantile(df$name_length, 0.90)
-df %>% filter(name_length > 42)
-df %>% filter(name_length < 20)
+df %>% 
+  filter(name_length > 42) %>%
+  head(5)
+df %>% 
+  filter(name_length < 20) %>%
+  head(5)
 ```
 
 Shorter names are often not very informational, while the longer names have almost too much information. 
@@ -967,7 +974,7 @@ df <- df %>%
 
 Now we look at a listing's name length and the number of reviews a listing receives per month: 
 
-```{r}
+```{r warning=FALSE, message=FALSE}
 # Create a basic boxplot
 ggplot(df, aes(x = name_category, y = log_reviews_per_month)) +
   geom_boxplot() +
@@ -1021,7 +1028,7 @@ df <- df %>% mutate(is_english = ifelse(name_language == "en", 1, 0)) %>% mutate
 Now we look at the semantics of the names. For this, we transform the names by, removing upper case letters, punctuation and stoppwords. 
 Then, we get the most common words used in the listing's names and create a word cloud.
 
-```{r}
+```{r warning=FALSE, message=FALSE}
 # Create a Corpus
 text <- Corpus(VectorSource(df$name))
 
@@ -1066,6 +1073,16 @@ top_150 <- result %>%
 wordcloud(words=top_150$word, freq=top_150$freq, min.freq=1, max.words=150, random.order=FALSE, colors=top_150$color)
 ```
 
+```{r}
+
+# Clear workspace
+rm( text )
+rm( m )
+rm( dm )
+
+```
+
+
 # Host Analysis
 
 ```{r}
@@ -1088,7 +1105,7 @@ quantile(df$calculated_host_listings_count, 0.95)
 
 Only 5% of listings have more than 15 listings. With this, 15 listings seem as reasonable a threshold as any to distinguish between hosts who rent on Airbnb professionally and those who do not. We've binned them into two groups (professional/casual) and compared the price (log), number of reviews (log), reviews per month (log) using box plots.
 
-```{r}
+```{r warning=FALSE, message=FALSE}
 df <- df %>% 
   mutate(host_category = cut(calculated_host_listings_count, 
                         breaks = c(0, 15, max(calculated_host_listings_count)),
@@ -1165,7 +1182,7 @@ df <- df %>% mutate(x = host_names_all) %>% filter(lengths(host_names_all) > 0) 
 df$host_names_splitted[!df$is_more_than_one_host] <- df$host_name[!df$is_more_than_one_host]
 # Ensure df stays a data drame
 df <- as.data.frame(df)
-df
+df %>% head(10)
 ```
 
 
@@ -1511,7 +1528,7 @@ To be more precise, although the price of highest-performing listings is 2.6 tim
 
 As we end the analysis of earnings, we clean up the workspace.
 
-```{r}
+```{r warning=FALSE, message=FALSE}
 
 # clear workspace
 rm(inf_earnings,
@@ -1622,6 +1639,13 @@ abline(lin_model_c_bx, col = "red")
 ```
 This shows the opposite result: Closer to the center of Bronx has lower price per night. Again, this is what we would expect from earlier analysis and from our intuition, since Bronx is not that close to the center. Also other negative aspects related to Bronx neighborhood could lead to this correlation.
 
+```{r}
+
+rm( df_2 )
+
+```
+
+
 ## Neighbourhood group distribution
 
 ```{r}
@@ -1679,7 +1703,7 @@ The pie charts above show the partition of listings, population and area across 
 
 This section will focus on the different neighbourhood groups and identifying the most expensive neighbourhoods within these groups.
 
-```{r}
+```{r warning=FALSE, message=FALSE}
 
 # function to plot bar chart with the most expensive neighbourhoods in a given neighbourhood group
 get_most_expensive_neighbourhoods_in_group <- function(group) {
@@ -1713,7 +1737,7 @@ get_most_expensive_neighbourhoods_in_group <- function(group) {
 
 ### Queens
 
-```{r}
+```{r warning=FALSE, message=FALSE}
 
 get_most_expensive_neighbourhoods_in_group("Queens")
 
@@ -1723,7 +1747,7 @@ Above one can see the seven most expensive neighbourhoods in Queens. Each bar re
 
 ### Manhattan
 
-```{r}
+```{r warning=FALSE, message=FALSE}
 
 get_most_expensive_neighbourhoods_in_group("Manhattan")
 
